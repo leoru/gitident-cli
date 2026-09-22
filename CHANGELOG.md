@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Build with Go 1.27 (`go 1.27.0` in go.mod; CI and releases follow it).
+
 ## 0.3.0
 
 - `gitident preflight [dir] [--json]` checks that a commit would go through with the right identity without anyone at the keyboard, including a test signature with passphrase prompts disabled. Each problem has a code and a suggested fix; exit status 0 / 1 (identity) / 2 (signing).
