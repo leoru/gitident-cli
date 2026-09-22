@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/leoru/gitident-cli/internal/config"
 	"github.com/leoru/gitident-cli/internal/fsutil"
 	"github.com/leoru/gitident-cli/internal/materialize"
 	"github.com/leoru/gitident-cli/internal/paths"
@@ -77,6 +78,22 @@ func (a *App) cmdUninstall(args []string) error {
 		case res.Action == materialize.Edited:
 			a.warn("%s: values copied from profile %q were changed by hand; left in place (`gitident unapply --force` there removes them)",
 				paths.Contract(f), res.Previous)
+		}
+	}
+
+	hooks := []string{ownHookPath()}
+	if p := planClone(&config.Config{}); p.foreignDir != "" {
+		hooks = append(hooks, filepath.Join(p.foreignDir, "hooks", paths.HookName))
+	}
+	for _, h := range hooks {
+		if isOurHook(h) {
+			a.printf("%s %s\n", verb, paths.Contract(h))
+			if !*dryRun {
+				if err := os.Remove(h); err != nil {
+					return err
+				}
+				removeEmptyTemplateDirs()
+			}
 		}
 	}
 

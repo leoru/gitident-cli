@@ -20,6 +20,7 @@ type Config struct {
 	Version        int                 `yaml:"version"`
 	StrictIdentity *bool               `yaml:"strict_identity,omitempty"`
 	Materialize    *bool               `yaml:"materialize,omitempty"`
+	CloneHook      *bool               `yaml:"clone_hook,omitempty"`
 	Profiles       map[string]*Profile `yaml:"profiles"`
 	Rules          []Rule              `yaml:"rules,omitempty"`
 	Scan           *Scan               `yaml:"scan,omitempty"`
@@ -55,6 +56,11 @@ type Scan struct {
 // Strict reports whether user.useConfigOnly should be set (default true).
 func (c *Config) Strict() bool {
 	return c.StrictIdentity == nil || *c.StrictIdentity
+}
+
+// CloneHookEnabled reports whether sync installs the clone hook (default false).
+func (c *Config) CloneHookEnabled() bool {
+	return c.CloneHook != nil && *c.CloneHook
 }
 
 // Materializes reports whether sync copies profile's settings into the

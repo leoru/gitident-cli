@@ -22,7 +22,13 @@ Render profiles.yaml into gitconfig:
   1. one fragment per profile in ~/.gitconfig.d/gitident/<profile>.gitconfig
   2. a managed block of includeIf rules in your global gitconfig
      (everything outside the block is left untouched)
-  3. copies of profiles in repositories' .git/config made by "gitident apply"
+  3. with ` + "`clone_hook: true`" + `, a post-checkout hook in git's template dir
+     (init.templateDir) that runs after every git clone: it prints the profile
+     the new repository gets, and copies it into .git/config when materialize
+     is on. If you already set init.templateDir, the hook goes into that
+     directory; if a post-checkout hook exists there, add "gitident __on-clone"
+     to it yourself
+  4. copies of profiles in repositories' .git/config made by "gitident apply"
      or ` + "`materialize: true`" + ` are brought up to date (see "gitident help apply")
 
 flags:
@@ -127,7 +133,7 @@ func (a *App) sync(cfg *config.Config, opts syncOptions) error {
 	}
 
 	// 3. Managed block.
-	block := render.Block(cfg)
+	block := blockFor(cfg)
 	updated, err := render.Splice(old, block)
 	if err != nil {
 		if errors.Is(err, render.ErrCorruptBlock) {
@@ -145,7 +151,14 @@ func (a *App) sync(cfg *config.Config, opts syncOptions) error {
 		}
 	}
 
-	// 4. Materialized copies in repositories.
+	// 4. Clone hook.
+	nHook, err := a.syncCloneHook(cfg, opts.dryRun)
+	if err != nil {
+		return err
+	}
+	changed += nHook
+
+	// 5. Materialized copies in repositories.
 	nCopies, held, err := a.syncMaterialized(cfg, opts.dryRun)
 	if err != nil {
 		return err
@@ -184,6 +197,9 @@ func wantedFragments(cfg *config.Config) []fragmentFile {
 	if cfg.Strict() {
 		out = append(out, fragmentFile{paths.FragmentPath(paths.StrictFragment), render.StrictFragmentContent()})
 	}
+	if planClone(cfg).ownTemplate {
+		out = append(out, fragmentFile{paths.FragmentPath(paths.CloneFragment), render.CloneFragmentContent()})
+	}
 	for _, name := range cfg.ProfileNames() {
 		out = append(out, fragmentFile{paths.FragmentPath(name), render.Fragment(name, cfg.Profiles[name])})
 	}
@@ -206,7 +222,8 @@ func staleFragments(cfg *config.Config) ([]string, error) {
 			continue
 		}
 		base := strings.TrimSuffix(name, paths.FragmentExt)
-		if _, ok := cfg.Profiles[base]; ok || (base == paths.StrictFragment && cfg.Strict()) {
+		if _, ok := cfg.Profiles[base]; ok || (base == paths.StrictFragment && cfg.Strict()) ||
+			(base == paths.CloneFragment && planClone(cfg).ownTemplate) {
 			continue
 		}
 		path := filepath.Join(paths.FragmentDir(), name)

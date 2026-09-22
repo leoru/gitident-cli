@@ -52,6 +52,17 @@ func xdgConfigHome() string {
 // never collides with a profile's fragment.
 const StrictFragment = "_strict"
 
+// CloneFragment is the generated fragment that points init.templateDir at
+// TemplateDirTilde (clone_hook).
+const CloneFragment = "_clone"
+
+// TemplateDirTilde is gitident's git template directory; its hooks are copied
+// into every repository created by git clone / git init.
+const TemplateDirTilde = FragmentDirTilde + "/template"
+
+// HookName is the hook gitident installs in the template directory.
+const HookName = "post-checkout"
+
 // FragmentDir returns the absolute fragment directory.
 func FragmentDir() string { return Expand(FragmentDirTilde) }
 

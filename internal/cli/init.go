@@ -37,6 +37,10 @@ strict_identity: true
 # Can be set per profile too. See ` + "`gitident help apply`" + `.
 # materialize: false
 
+# Install a post-checkout hook in git's clone template: every new clone reports
+# the profile it gets (or that none applies) and gets its copy when materialize is on.
+# clone_hook: false
+
 profiles:
   personal:
     name: %s

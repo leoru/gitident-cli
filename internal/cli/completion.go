@@ -18,7 +18,7 @@ The bash script also completes "git ident ..." when git's completion is loaded.
 const bashCompletion = `# bash completion for gitident
 _gitident_complete() {
     local cur=$1 cmd=$2 pos=$3
-    local cmds="init import sync which check use unuse apply unapply doctor uninstall completion version help"
+    local cmds="init import sync which preflight check use unuse apply unapply agent doctor uninstall completion version help"
     if [ "$pos" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
         return
@@ -34,6 +34,8 @@ _gitident_complete() {
                 check) flags="--json -q" ;;
                 use) flags="--save" ;;
                 apply|unapply) flags="--all --force --dry-run" ;;
+                preflight) flags="--json --no-sign" ;;
+                agent) flags="--scope --dry-run" ;;
                 uninstall) flags="--dry-run" ;;
             esac
             COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
@@ -46,9 +48,15 @@ _gitident_complete() {
             else
                 COMPREPLY=( $(compgen -d -- "$cur") )
             fi ;;
-        which|unuse|apply|unapply|check|import) COMPREPLY=( $(compgen -d -- "$cur") ) ;;
+        agent)
+            if [ "$pos" -eq 2 ]; then
+                COMPREPLY=( $(compgen -W "install uninstall status instructions" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "claude" -- "$cur") )
+            fi ;;
+        which|preflight|unuse|apply|unapply|check|import) COMPREPLY=( $(compgen -d -- "$cur") ) ;;
         completion) COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") ) ;;
-        help) COMPREPLY=( $(compgen -W "init import sync which check use unuse apply unapply doctor uninstall completion version" -- "$cur") ) ;;
+        help) COMPREPLY=( $(compgen -W "init import sync which preflight check use unuse apply unapply agent doctor uninstall completion version" -- "$cur") ) ;;
     esac
 }
 _gitident() {
@@ -79,11 +87,13 @@ _gitident() {
         'import:generate profiles.yaml from existing git configuration'
         'sync:render profiles into ~/.gitconfig'
         'which:show the identity git uses in a directory'
+        'preflight:check that a commit here would work unattended'
         'check:audit every repository under the configured roots'
         'use:pin a repository to a profile'
         'unuse:remove a repository pin'
         'apply:copy a repository'"'"'s profile into its .git/config'
         'unapply:remove a profile copied by apply'
+        'agent:set up AI coding agents to respect your identities'
         'doctor:diagnose the installation'
         'uninstall:remove the managed block and fragments'
         'completion:print a shell completion script'
@@ -101,6 +111,9 @@ _gitident() {
                     '--interactive[prompt for profile names]' '*:root:_directories' ;;
         sync) _arguments '--dry-run[show changes, write nothing]' '--no-prune[keep stale fragments]' ;;
         which) _arguments '--json[machine-readable output]' '1:directory:_directories' ;;
+        preflight) _arguments '--json[machine-readable output]' '--no-sign[skip the signing test]' '1:directory:_directories' ;;
+        agent) _arguments '1:action:(install uninstall status instructions)' '2:agent:(claude)' \
+                    '--scope[where to install]:scope:(user project local)' '--dry-run[show changes, write nothing]' ;;
         check) _arguments '--json[machine-readable output]' '-q[only print problems]' '*:root:_directories' ;;
         use) _arguments '--save[also add the repo to profiles.yaml]' '1:profile:_gitident_profiles' '2:directory:_directories' ;;
         unuse) _arguments '1:directory:_directories' ;;
@@ -116,13 +129,15 @@ _gitident "$@"
 `
 
 const fishCompletion = `# fish completion for gitident
-set -l cmds init import sync which check use unuse apply unapply doctor uninstall completion version help
+set -l cmds init import sync which preflight check use unuse apply unapply agent doctor uninstall completion version help
 for bin in gitident git-ident
     complete -c $bin -f
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a init -d 'write a commented sample profiles.yaml'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a import -d 'generate profiles.yaml from existing git configuration'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a sync -d 'render profiles into ~/.gitconfig'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a which -d 'show the identity git uses in a directory'
+    complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a preflight -d 'check that a commit here would work unattended'
+    complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a agent -d 'set up AI coding agents to respect your identities'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a check -d 'audit every repository under the configured roots'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a use -d 'pin a repository to a profile'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a unuse -d 'remove a repository pin'
@@ -140,8 +155,12 @@ for bin in gitident git-ident
     complete -c $bin -n "__fish_seen_subcommand_from import" -l force -d 'overwrite the existing file'
     complete -c $bin -n "__fish_seen_subcommand_from import" -l from-gitkraken -d 'also read GitKraken profiles'
     complete -c $bin -n "__fish_seen_subcommand_from import" -l interactive -d 'prompt for profile names'
-    complete -c $bin -n "__fish_seen_subcommand_from import check which unuse apply unapply" -a '(__fish_complete_directories)'
+    complete -c $bin -n "__fish_seen_subcommand_from import check which preflight unuse apply unapply" -a '(__fish_complete_directories)'
     complete -c $bin -n "__fish_seen_subcommand_from sync" -l dry-run -d 'show changes, write nothing'
+    complete -c $bin -n "__fish_seen_subcommand_from preflight" -l json -d 'machine-readable output'
+    complete -c $bin -n "__fish_seen_subcommand_from preflight" -l no-sign -d 'skip the signing test'
+    complete -c $bin -n "__fish_seen_subcommand_from agent" -a 'install uninstall status instructions claude'
+    complete -c $bin -n "__fish_seen_subcommand_from agent" -l scope -xa 'user project local' -d 'where to install'
     complete -c $bin -n "__fish_seen_subcommand_from apply unapply" -l all -d 'every repository'
     complete -c $bin -n "__fish_seen_subcommand_from apply unapply" -l force -d 'overwrite values changed by hand'
     complete -c $bin -n "__fish_seen_subcommand_from apply unapply" -l dry-run -d 'show changes, write nothing'

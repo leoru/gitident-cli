@@ -41,17 +41,20 @@ func commands() []command {
 		{name: "import", summary: "generate profiles.yaml from existing git configuration", usage: importUsage, run: (*App).cmdImport},
 		{name: "sync", summary: "render profiles into ~/.gitconfig", usage: syncUsage, run: (*App).cmdSync},
 		{name: "which", summary: "show the identity git uses in a directory", usage: whichUsage, run: (*App).cmdWhich},
+		{name: "preflight", summary: "check that a commit here would work unattended (for scripts and agents)", usage: preflightUsage, run: (*App).cmdPreflight},
 		{name: "check", summary: "audit every repository under the configured roots", usage: checkUsage, run: (*App).cmdCheck},
 		{name: "use", summary: "pin a repository to a profile", usage: useUsage, run: (*App).cmdUse},
 		{name: "unuse", summary: "remove a repository's pin", usage: unuseUsage, run: (*App).cmdUnuse},
 		{name: "apply", summary: "copy a repository's profile into its .git/config", usage: applyUsage, run: (*App).cmdApply},
 		{name: "unapply", summary: "remove a profile copied by apply", usage: unapplyUsage, run: (*App).cmdUnapply},
+		{name: "agent", summary: "set up AI coding agents (Claude Code) to respect your identities", usage: agentUsage, run: (*App).cmdAgent},
 		{name: "doctor", summary: "diagnose the installation", usage: doctorUsage, run: (*App).cmdDoctor},
 		{name: "uninstall", summary: "remove the managed block and fragments", usage: uninstallUsage, run: (*App).cmdUninstall},
 		{name: "completion", summary: "print a shell completion script", usage: completionUsage, run: (*App).cmdCompletion},
 		{name: "version", summary: "print the version", usage: "usage: gitident version\n", run: (*App).cmdVersion},
 		{name: "help", summary: "show help for a command", usage: "usage: gitident help [command]\n", run: (*App).cmdHelp},
 		{name: "__profiles", hidden: true, run: (*App).cmdProfiles},
+		{name: "__on-clone", hidden: true, run: (*App).cmdOnClone},
 	}
 }
 

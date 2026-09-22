@@ -5,6 +5,7 @@ This is the full reference. For a quick introduction, see the [README](../README
 - [How it works](#how-it-works)
 - [Which profile wins](#which-profile-wins)
 - [Copying profiles into repositories](#copying-profiles-into-repositories)
+- [AI agents and scripts](#ai-agents-and-scripts)
 - [Configuration reference](#configuration-reference)
 - [Commands](#commands)
 - [Migrating an existing setup](#migrating-an-existing-setup)
@@ -174,6 +175,86 @@ One trade-off: a copy only exists after `apply` or `sync` has run, so a fresh
 clone relies on the includeIf rules until then (or fails in strict mode inside
 a container). Run `gitident sync` after cloning when that matters.
 
+## AI agents and scripts
+
+Coding agents commit without anyone watching. When an identity is missing they
+tend to "fix" it with `git config user.email …`, which quietly defeats strict
+mode, and a signing key that needs a passphrase makes their commit hang on a
+prompt nobody sees. gitident gives them three things.
+
+### `gitident preflight`
+
+One command that says whether a commit in a directory would go through with
+the right identity, unattended:
+
+```console
+$ gitident preflight ~/Projects/wb/analytics
+identity  kunst.kirill <kunst.kirill@wb.ru>  (profile wb)
+FAIL signing_failed: commits here are signed (openpgp key A4A7100D728A87D5), but a test signature failed: gpg: signing failed: No pinentry
+     → ask the user to unlock the GPG key in a terminal (…)
+```
+
+It checks that git has a `user.email`, that it belongs to a profile, and that
+it is the profile the rules, `repos` lists or pin choose. It also flags an
+identity no rule chose, such as a global `user.email`. When commits are signed,
+it makes a test signature with the same program and key git would use, with
+passphrase prompts disabled, so a locked key fails at once instead of hanging.
+
+`--json` gives `ok`, the identity, the signing result and a list of `problems`,
+each with a `code` and a `fix`. The exit status is 0 when a commit would go
+through, 1 for an identity problem and 2 when only signing would fail.
+`--no-sign` skips the signing test.
+
+| Code | Meaning |
+| --- | --- |
+| `no_identity` | No `user.email`: no profile applies, or `sync` hasn't run. |
+| `unknown_email` | The email isn't in any profile. |
+| `unmatched` | The email belongs to a profile, but no rule, `repos` entry or pin chose it (e.g. a global `user.email`). |
+| `mismatch` | A different profile than the rules say. |
+| `stale_copy` | The profile copy in `.git/config` is out of date or was edited. |
+| `signing_failed` | Commits are signed, but the test signature failed or would need a passphrase. |
+| `not_a_repo`, `no_config` | Not in a repository, or `profiles.yaml` is missing or invalid. |
+
+### Claude Code
+
+```sh
+gitident agent install            # ~/.claude (all projects); --scope project|local for one repo
+```
+
+This installs two things:
+
+- **A PreToolUse hook** that looks at every shell command Claude is about to
+  run. It blocks `git commit`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`,
+  `pull` and annotated tags when `preflight` finds a problem, and blocks
+  setting the identity by hand (`git config user.email`, `git -c user.name=…`,
+  `GIT_AUTHOR_*` variables). Claude sees the problem and its fix and can ask
+  you. It understands `cd dir && git …` and `git -C dir …`. Commands made with
+  `--no-gpg-sign` skip the signing test.
+- **A `gitident` skill** telling Claude to run `preflight` before committing
+  and how to handle each problem code.
+
+`gitident agent status` shows what is installed; `gitident agent uninstall`
+removes both and leaves the rest of your settings as they were. For other
+agents, `gitident agent instructions` prints the same guidance for your
+`AGENTS.md` or rule files.
+
+### New clones
+
+Agents often clone into fresh directories. With `clone_hook: true`, `sync`
+installs a `post-checkout` hook in git's template directory, so every
+`git clone` (and `git worktree add`) ends with one line such as:
+
+```console
+gitident: profile "work" (Kirill Kunst <kirill@company.com>), copied into .git/config
+gitident: no profile applies to this repository, so commits will fail; run `gitident use <profile>` here (profiles: …)
+```
+
+With `materialize` on for the profile, the new clone also gets its copy right
+away, before the first commit. If you already set `init.templateDir`, the hook
+goes into that directory instead, and an existing `post-checkout` hook there is
+never replaced (call `gitident __on-clone` from it yourself). A global
+`core.hooksPath` stops git from running template hooks; `doctor` flags that.
+
 ## Configuration reference
 
 The config lives at `$XDG_CONFIG_HOME/gitident/profiles.yaml`
@@ -183,6 +264,7 @@ The config lives at `$XDG_CONFIG_HOME/gitident/profiles.yaml`
 version: 1                        # required
 strict_identity: true             # user.useConfigOnly (default true)
 materialize: false                # also copy profiles into each repo's .git/config
+clone_hook: false                 # post-checkout hook in git's clone template
 
 profiles:
   work:                           # letters, digits, . _ - (becomes a file name)
@@ -224,11 +306,13 @@ don't block `sync`.
 | `gitident import [roots…] [--write\|--merge\|--force] [--from-gitkraken] [--interactive]` | Build `profiles.yaml` from your existing git setup. Prints to stdout unless `--write` is given. |
 | `gitident sync [--dry-run] [--no-prune]` | Validate, write fragments, delete fragments of removed profiles, update the managed block, and bring profile copies in `.git/config` up to date. Running it twice changes nothing. |
 | `gitident which [dir] [--json]` | Show the identity in a directory, where `user.email` comes from, which profile that is, and which profile is expected. |
+| `gitident preflight [dir] [--json] [--no-sign]` | Check that a commit would go through with the right identity, and that signing works without a prompt. See [AI agents and scripts](#ai-agents-and-scripts). |
 | `gitident check [roots…] [--json] [-q]` | Check every repository under the roots (default: all rule dirs plus the parents of listed repos). Exits 1 on problems. |
 | `gitident use <profile> [dir] [--save]` | Pin a repository to a profile. `--save` also adds it to the profile's `repos` (keeping your YAML comments) and syncs. |
 | `gitident unuse [dir]` | Remove the pin. Warns if a `repos` entry will keep applying. |
 | `gitident apply [dir…\|--all] [--force] [--dry-run]` | Copy the repository's profile into its `.git/config`. See [Copying profiles into repositories](#copying-profiles-into-repositories). |
 | `gitident unapply [dir…\|--all] [--force] [--dry-run]` | Remove copies made by `apply`. |
+| `gitident agent install\|uninstall\|status [claude] [--scope user\|project\|local]` | Install the Claude Code hook and skill. `gitident agent instructions` prints guidance for other agents. |
 | `gitident doctor` | Check the git version, config, key files, GPG/SSH signing setup, and whether the block and fragments are current. |
 | `gitident uninstall [--dry-run]` | Remove the managed block, the fragments and the profile copies in repositories. Keeps `profiles.yaml`. |
 | `gitident completion bash\|zsh\|fish` | Print shell completions. Profile names are completed for `use`. |

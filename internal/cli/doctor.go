@@ -216,7 +216,7 @@ func (d *doctor) checkManaged(cfg *config.Config) {
 	case len(foreignLines(data)) > 0:
 		d.fail("move them above the managed block; `gitident sync` would delete them", "%s has settings inside the managed block: %s",
 			paths.Contract(global), strings.Join(foreignLines(data), "; "))
-	case !bytes.Equal(onDisk, render.Block(cfg)):
+	case !bytes.Equal(onDisk, blockFor(cfg)):
 		d.fail("run `gitident sync`", "managed block in %s is out of date", paths.Contract(global))
 	default:
 		d.pass("managed block in %s is current", paths.Contract(global))
@@ -236,6 +236,7 @@ func (d *doctor) checkManaged(cfg *config.Config) {
 	}
 
 	d.checkCopies(cfg)
+	d.checkCloneHook(cfg)
 
 	warns := globalIdentityWarnings(cfg, global)
 	for _, w := range warns {
@@ -243,6 +244,29 @@ func (d *doctor) checkManaged(cfg *config.Config) {
 	}
 	if len(warns) == 0 {
 		d.pass("no global identity outside the managed block")
+	}
+}
+
+func (d *doctor) checkCloneHook(cfg *config.Config) {
+	plan := planClone(cfg)
+	if !plan.enabled {
+		return
+	}
+	data, _ := os.ReadFile(plan.hook)
+	switch {
+	case data == nil:
+		d.fail("run `gitident sync`", "clone hook %s is missing", paths.Contract(plan.hook))
+	case !bytes.Contains(data, fragmentHeader):
+		d.warn("add `gitident __on-clone` to it", "%s exists but was not written by gitident", paths.Contract(plan.hook))
+	case string(data) != render.HookScript:
+		d.fail("run `gitident sync`", "clone hook %s is out of date", paths.Contract(plan.hook))
+	default:
+		d.pass("clone hook %s installed", paths.Contract(plan.hook))
+	}
+	for _, w := range cloneHookWarnings(plan) {
+		if strings.Contains(w, "core.hooksPath") {
+			d.fail("unset core.hooksPath globally, or call `gitident __on-clone` from a post-checkout hook in that directory", "%s", w)
+		}
 	}
 }
 

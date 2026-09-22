@@ -95,6 +95,8 @@ of `init`. It reads your current setup and writes the YAML for you. See the
 | Use a different profile for this one repo | `gitident use work` (add `--save` to remember it in the YAML) |
 | Undo that | `gitident unuse` |
 | Make a repo's identity work in a dev container or GUI client that ignores includeIf | `gitident apply` (or `materialize: true` in the YAML) |
+| Check that a commit would work unattended (identity and signing) | `gitident preflight` |
+| Stop Claude Code from committing with the wrong identity | `gitident agent install` |
 | Apply changes after editing the YAML | `gitident sync` |
 | Find repos with a wrong or missing identity | `gitident check` |
 | Check that everything is set up correctly | `gitident doctor` |

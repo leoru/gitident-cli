@@ -81,9 +81,9 @@ func TestFragmentGolden(t *testing.T) {
 
 func TestBlockGolden(t *testing.T) {
 	cfg := sampleConfig()
-	golden(t, "block.gitconfig", Block(cfg))
+	golden(t, "block.gitconfig", Block(cfg, false))
 	cfg.StrictIdentity = boolPtr(false)
-	if bytes.Contains(Block(cfg), []byte("useConfigOnly")) {
+	if bytes.Contains(Block(cfg, false), []byte("useConfigOnly")) {
 		t.Error("non-strict block must not set useConfigOnly")
 	}
 }
