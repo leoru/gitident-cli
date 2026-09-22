@@ -1,0 +1,29 @@
+# >>> gitident managed block — edit profiles.yaml and run `gitident sync` >>>
+# Precedence: later entries win — rules (in file order), then per-profile repos.
+# Pins made with `gitident use` live in .git/config and beat all of these.
+# strict_identity: user.useConfigOnly = true
+[include]
+	path = ~/.gitconfig.d/gitident/_strict.gitconfig
+# rule 1 → personal
+[includeIf "gitdir:/nonexistent-root/code/"]
+	path = ~/.gitconfig.d/gitident/personal.gitconfig
+# rule 2 → work
+[includeIf "gitdir:/nonexistent-root/work/"]
+	path = ~/.gitconfig.d/gitident/work.gitconfig
+[includeIf "hasconfig:remote.*.url:git@github.com:company/**"]
+	path = ~/.gitconfig.d/gitident/work.gitconfig
+[includeIf "hasconfig:remote.*.url:https://gitlab.company.com/**"]
+	path = ~/.gitconfig.d/gitident/work.gitconfig
+# repos → personal
+[includeIf "hasconfig:remote.*.url:https://github.com/me/dotfiles"]
+	path = ~/.gitconfig.d/gitident/personal.gitconfig
+[includeIf "hasconfig:remote.*.url:https://github.com/me/dotfiles.git"]
+	path = ~/.gitconfig.d/gitident/personal.gitconfig
+# repos → work
+[includeIf "gitdir:/srv/legacy-thing/.git"]
+	path = ~/.gitconfig.d/gitident/work.gitconfig
+[includeIf "hasconfig:remote.*.url:git@github.com:company/infra"]
+	path = ~/.gitconfig.d/gitident/work.gitconfig
+[includeIf "hasconfig:remote.*.url:git@github.com:company/infra.git"]
+	path = ~/.gitconfig.d/gitident/work.gitconfig
+# <<< gitident managed block <<<

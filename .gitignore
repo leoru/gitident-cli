@@ -1,0 +1,22 @@
+# build output
+/bin/
+/dist/
+/gitident
+/git-ident
+*.test
+*.out
+coverage.*
+
+# editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# local tooling
+.codegraph/
+/completions/
+
+# Claude Code local state
+/.claude/

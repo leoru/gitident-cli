@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: gitident
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+    - ./scripts/completions.sh
+
+builds:
+  - id: gitident
+    main: ./cmd/gitident
+    binary: gitident
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      # Relative symlink git-ident -> gitident, so `git ident <cmd>` works.
+      - src: packaging/git-ident
+        strip_parent: true
+      - completions/*
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: leoru
+    name: gitident-cli
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+homebrew_casks:
+  - name: gitident
+    repository:
+      owner: leoru
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/leoru/gitident-cli
+    description: Keep git identities in one file and apply them per directory, remote or repo
+    license: MIT
+    binaries:
+      - gitident
+      - git-ident
+    completions:
+      bash: completions/gitident.bash
+      zsh: completions/_gitident
+      fish: completions/gitident.fish
+    hooks:
+      post:
+        # The binaries are not notarized; clear the quarantine flag so macOS runs them.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gitident"]
+          end
