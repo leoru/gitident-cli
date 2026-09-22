@@ -47,7 +47,7 @@ func commands() []command {
 		{name: "unuse", summary: "remove a repository's pin", usage: unuseUsage, run: (*App).cmdUnuse},
 		{name: "apply", summary: "copy a repository's profile into its .git/config", usage: applyUsage, run: (*App).cmdApply},
 		{name: "unapply", summary: "remove a profile copied by apply", usage: unapplyUsage, run: (*App).cmdUnapply},
-		{name: "agent", summary: "set up AI coding agents (Claude Code) to respect your identities", usage: agentUsage, run: (*App).cmdAgent},
+		{name: "agent", summary: "set up AI coding agents to respect your identities", usage: agentUsage, run: (*App).cmdAgent},
 		{name: "doctor", summary: "diagnose the installation", usage: doctorUsage, run: (*App).cmdDoctor},
 		{name: "uninstall", summary: "remove the managed block and fragments", usage: uninstallUsage, run: (*App).cmdUninstall},
 		{name: "completion", summary: "print a shell completion script", usage: completionUsage, run: (*App).cmdCompletion},

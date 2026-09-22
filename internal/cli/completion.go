@@ -50,9 +50,9 @@ _gitident_complete() {
             fi ;;
         agent)
             if [ "$pos" -eq 2 ]; then
-                COMPREPLY=( $(compgen -W "install uninstall status instructions" -- "$cur") )
+                COMPREPLY=( $(compgen -W "install uninstall status list instructions" -- "$cur") )
             else
-                COMPREPLY=( $(compgen -W "claude" -- "$cur") )
+                COMPREPLY=( $(compgen -W "claude codex cursor gemini copilot factory windsurf" -- "$cur") )
             fi ;;
         which|preflight|unuse|apply|unapply|check|import) COMPREPLY=( $(compgen -d -- "$cur") ) ;;
         completion) COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") ) ;;
@@ -112,7 +112,7 @@ _gitident() {
         sync) _arguments '--dry-run[show changes, write nothing]' '--no-prune[keep stale fragments]' ;;
         which) _arguments '--json[machine-readable output]' '1:directory:_directories' ;;
         preflight) _arguments '--json[machine-readable output]' '--no-sign[skip the signing test]' '1:directory:_directories' ;;
-        agent) _arguments '1:action:(install uninstall status instructions)' '2:agent:(claude)' \
+        agent) _arguments '1:action:(install uninstall status list instructions)' '*:agent:(claude codex cursor gemini copilot factory windsurf)' \
                     '--scope[where to install]:scope:(user project local)' '--dry-run[show changes, write nothing]' ;;
         check) _arguments '--json[machine-readable output]' '-q[only print problems]' '*:root:_directories' ;;
         use) _arguments '--save[also add the repo to profiles.yaml]' '1:profile:_gitident_profiles' '2:directory:_directories' ;;
@@ -159,7 +159,7 @@ for bin in gitident git-ident
     complete -c $bin -n "__fish_seen_subcommand_from sync" -l dry-run -d 'show changes, write nothing'
     complete -c $bin -n "__fish_seen_subcommand_from preflight" -l json -d 'machine-readable output'
     complete -c $bin -n "__fish_seen_subcommand_from preflight" -l no-sign -d 'skip the signing test'
-    complete -c $bin -n "__fish_seen_subcommand_from agent" -a 'install uninstall status instructions claude'
+    complete -c $bin -n "__fish_seen_subcommand_from agent" -a 'install uninstall status list instructions claude codex cursor gemini copilot factory windsurf'
     complete -c $bin -n "__fish_seen_subcommand_from agent" -l scope -xa 'user project local' -d 'where to install'
     complete -c $bin -n "__fish_seen_subcommand_from apply unapply" -l all -d 'every repository'
     complete -c $bin -n "__fish_seen_subcommand_from apply unapply" -l force -d 'overwrite values changed by hand'

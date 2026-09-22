@@ -3,7 +3,8 @@
 ## 0.3.0
 
 - `gitident preflight [dir] [--json]` checks that a commit would go through with the right identity without anyone at the keyboard, including a test signature with passphrase prompts disabled. Each problem has a code and a suggested fix; exit status 0 / 1 (identity) / 2 (signing).
-- `gitident agent install` sets up Claude Code: a PreToolUse hook that blocks commits `preflight` would fail and blocks setting `user.name` / `user.email` by hand, plus a `gitident` skill. `agent uninstall`, `agent status`, and `agent instructions` (guidance for AGENTS.md and other agents).
+- `gitident agent install [agent…]` sets up coding agents: Claude Code, OpenAI Codex, Cursor, Gemini CLI, GitHub Copilot CLI, Factory Droid and Windsurf (all detected ones by default). Each gets a pre-shell-command hook that blocks commits `preflight` would fail and blocks setting `user.name` / `user.email` by hand, plus guidance (a skill, rule file or managed section in AGENTS.md / GEMINI.md / copilot-instructions.md). User or project scope; `agent uninstall`, `status`, `list`, and `instructions` for other agents.
+- README badges for CI, coverage (published by CI to the `badges` branch, no third-party service), release, Go version and license.
 - `clone_hook: true` installs a post-checkout hook in git's template directory: every new clone reports the profile it gets (or that none applies), and gets its copy right away when `materialize` is on.
 
 ## 0.2.0

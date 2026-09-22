@@ -106,7 +106,7 @@ func TestAgentHook(t *testing.T) {
 	}
 }
 
-func TestAgentInstall(t *testing.T) {
+func TestAgentInstallClaude(t *testing.T) {
 	home := testutil.Home(t)
 	dir := filepath.Join(home, "claude")
 	t.Setenv("CLAUDE_CONFIG_DIR", dir)
@@ -124,14 +124,14 @@ func TestAgentInstall(t *testing.T) {
 	testutil.WriteFile(t, filepath.Join(dir, "settings.json"), existing)
 
 	r := mustRun(t, "agent", "install", "--dry-run")
-	if !strings.Contains(r.stdout, "would add the PreToolUse hook") {
+	if !strings.Contains(r.stdout, "claude    would add the hook to ~/claude/settings.json") {
 		t.Errorf("dry run:\n%s", r.stdout)
 	}
 	if data, _ := os.ReadFile(filepath.Join(dir, "settings.json")); string(data) != existing {
 		t.Error("dry run changed settings")
 	}
-	r = mustRun(t, "agent", "install", "claude")
-	if !strings.Contains(r.stdout, "write ~/claude/skills/gitident/SKILL.md") {
+	r = mustRun(t, "agent", "install") // only claude is detected here
+	if !strings.Contains(r.stdout, "write ~/claude/skills/gitident/SKILL.md") || strings.Contains(r.stdout, "codex") {
 		t.Errorf("install:\n%s", r.stdout)
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
@@ -144,10 +144,10 @@ func TestAgentInstall(t *testing.T) {
 	if strings.Index(s, `"model"`) > strings.Index(s, `"hooks"`) || strings.Index(s, `"hooks"`) > strings.Index(s, `"permissions"`) {
 		t.Errorf("key order not kept:\n%s", s)
 	}
-	if r := mustRun(t, "agent", "install"); !strings.Contains(r.stdout, "up to date") {
+	if r := mustRun(t, "agent", "install", "claude"); !strings.Contains(r.stdout, "claude    up to date") {
 		t.Errorf("second install:\n%s", r.stdout)
 	}
-	if r := mustRun(t, "agent", "status"); !strings.Contains(r.stdout, "hook   installed") || !strings.Contains(r.stdout, "skill  installed") {
+	if r := mustRun(t, "agent", "status", "claude"); strings.Count(r.stdout, "installed") != 2 {
 		t.Errorf("status:\n%s", r.stdout)
 	}
 	skill, _ := os.ReadFile(filepath.Join(dir, "skills", "gitident", "SKILL.md"))
@@ -155,7 +155,7 @@ func TestAgentInstall(t *testing.T) {
 		t.Errorf("skill:\n%s", skill)
 	}
 
-	mustRun(t, "agent", "uninstall")
+	mustRun(t, "agent", "uninstall", "claude")
 	data, _ = os.ReadFile(filepath.Join(dir, "settings.json"))
 	var got, want any
 	_ = json.Unmarshal(data, &got)
@@ -166,23 +166,155 @@ func TestAgentInstall(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "skills", "gitident")); !os.IsNotExist(err) {
 		t.Error("skill dir left behind")
 	}
+	if r := run(t, "agent", "install", "--scope", "team", "claude"); r.code != 2 {
+		t.Errorf("bad scope: %+v", r)
+	}
+	if r := run(t, "agent", "install", "nope"); r.code != 2 || !strings.Contains(r.stderr, "supported: claude, codex") {
+		t.Errorf("unknown agent: %+v", r)
+	}
+	if r := run(t, "agent", "install", "--scope", "local", "codex"); r.code != 2 {
+		t.Errorf("local scope for codex: %+v", r)
+	}
+	if r := mustRun(t, "agent", "instructions"); !strings.HasPrefix(r.stdout, "# Git identity (gitident)") {
+		t.Errorf("instructions:\n%s", r.stdout)
+	}
+}
 
-	// Fresh install into a project with no settings yet.
+func TestAgentInstallAll(t *testing.T) {
+	home := testutil.Home(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("COPILOT_HOME", "")
+	t.Setenv("GEMINI_CLI_HOME", "")
+	for _, d := range []string{".claude", ".codex", ".cursor", ".gemini", ".copilot", ".factory", ".codeium/windsurf"} {
+		_ = os.MkdirAll(filepath.Join(home, d), 0o755)
+	}
+	// Existing configs of other tools must survive.
+	testutil.WriteFile(t, filepath.Join(home, ".codex", "AGENTS.md"), "# My rules\n\nBe terse.\n")
+	testutil.WriteFile(t, filepath.Join(home, ".cursor", "hooks.json"),
+		`{"version":1,"hooks":{"beforeShellExecution":[{"command":"other-hook.sh"}],"stop":[{"command":"x"}]}}`)
+	testutil.WriteFile(t, filepath.Join(home, ".gemini", "settings.json"),
+		`{"mcpServers":{"a":{"command":"a"}},"hooks":{"AfterTool":[{"hooks":[{"type":"command","command":"after.sh"}]}]}}`)
+
+	r := mustRun(t, "agent", "list")
+	if strings.Count(r.stdout, " found ") != 7 {
+		t.Errorf("list:\n%s", r.stdout)
+	}
+	mustRun(t, "agent", "install")
+	read := func(rel string) string {
+		data, err := os.ReadFile(filepath.Join(home, rel))
+		if err != nil {
+			t.Errorf("%s: %v", rel, err)
+		}
+		return string(data)
+	}
+	checks := map[string][]string{
+		".codex/hooks.json":                {`"PreToolUse"`, `"matcher": "Bash"`, "agent hook codex"},
+		".codex/AGENTS.md":                 {"# My rules", "Be terse.", "<!-- >>> gitident", "gitident preflight --json", "<!-- <<< gitident <<< -->"},
+		".cursor/hooks.json":               {"other-hook.sh", `"stop"`, "agent hook cursor", `"version": 1`},
+		".gemini/settings.json":            {`"mcpServers"`, "after.sh", `"BeforeTool"`, `"matcher": "run_shell_command"`, "agent hook gemini"},
+		".gemini/GEMINI.md":                {"gitident preflight --json"},
+		".copilot/hooks/gitident.json":     {`"preToolUse"`, `"bash": "gitident agent hook copilot"`, `"version": 1`},
+		".copilot/copilot-instructions.md": {"gitident preflight --json"},
+		".factory/hooks.json":              {`"matcher": "Execute"`, "agent hook factory"},
+		".codeium/windsurf/hooks.json":     {`"pre_run_command"`, "agent hook windsurf", `"show_output": true`},
+		".claude/skills/gitident/SKILL.md": {"name: gitident"},
+	}
+	for rel, wants := range checks {
+		got := read(rel)
+		for _, w := range wants {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s lacks %q:\n%s", rel, w, got)
+			}
+		}
+	}
+	if r := mustRun(t, "agent", "install"); strings.Count(r.stdout, "up to date") != 7 {
+		t.Errorf("second install should change nothing:\n%s", r.stdout)
+	}
+	if r := mustRun(t, "agent", "status"); strings.Count(r.stdout, "installed") != 11 {
+		t.Errorf("status:\n%s", r.stdout)
+	}
+
+	mustRun(t, "agent", "uninstall")
+	if got := read(".codex/AGENTS.md"); got != "# My rules\n\nBe terse.\n" {
+		t.Errorf("AGENTS.md after uninstall: %q", got)
+	}
+	if got := read(".cursor/hooks.json"); strings.Contains(got, "gitident") || !strings.Contains(got, "other-hook.sh") {
+		t.Errorf("cursor hooks after uninstall:\n%s", got)
+	}
+	if got := read(".gemini/settings.json"); strings.Contains(got, "BeforeTool") || !strings.Contains(got, "after.sh") {
+		t.Errorf("gemini settings after uninstall:\n%s", got)
+	}
+	for _, rel := range []string{".codex/hooks.json", ".copilot/hooks/gitident.json", ".gemini/GEMINI.md", ".copilot/copilot-instructions.md"} {
+		if data, err := os.ReadFile(filepath.Join(home, rel)); err == nil && strings.Contains(string(data), "gitident") {
+			t.Errorf("%s still mentions gitident:\n%s", rel, data)
+		}
+	}
+
+	// Project scope writes shared project files.
 	proj := filepath.Join(home, "proj")
 	_ = os.MkdirAll(proj, 0o755)
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
 	_ = os.Chdir(proj)
+	mustRun(t, "agent", "install", "--scope", "project", "cursor", "codex", "factory")
+	for _, rel := range []string{"proj/.cursor/hooks.json", "proj/.cursor/rules/gitident.mdc", "proj/.codex/hooks.json", "proj/AGENTS.md", "proj/.factory/hooks.json"} {
+		if !strings.Contains(read(rel), "gitident") {
+			t.Errorf("%s not written", rel)
+		}
+	}
+	if n := strings.Count(read("proj/AGENTS.md"), "<!-- >>> gitident"); n != 1 {
+		t.Errorf("AGENTS.md has %d gitident sections", n)
+	}
 	mustRun(t, "agent", "install", "--scope", "local")
-	data, _ = os.ReadFile(filepath.Join(proj, ".claude", "settings.local.json"))
-	if !strings.Contains(string(data), `"matcher": "Bash"`) {
-		t.Errorf("local settings:\n%s", data)
+	if !strings.Contains(read("proj/.claude/settings.local.json"), `"matcher": "Bash"`) {
+		t.Error("local scope not written")
 	}
-	if r := run(t, "agent", "install", "--scope", "team"); r.code != 2 {
-		t.Errorf("bad scope: %+v", r)
+}
+
+func TestAgentHookFormats(t *testing.T) {
+	home := setupE2E(t)
+	mustRun(t, "sync")
+	bad := filepath.Join(home, "tmp", "unmatched")
+	payloads := map[string]string{
+		"codex":    hookPayload(bad, "git commit -m x"),
+		"factory":  `{"tool_name":"Execute","cwd":"` + bad + `","tool_input":{"command":"git commit -m x"}}`,
+		"gemini":   `{"tool_name":"run_shell_command","cwd":"` + bad + `","tool_input":{"command":"git commit -m x"}}`,
+		"cursor":   `{"command":"git commit -m x","cwd":"` + bad + `","sandbox":false}`,
+		"windsurf": `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"git commit -m x","cwd":"` + bad + `"}}`,
+		"copilot":  `{"toolName":"bash","cwd":"` + bad + `","toolArgs":"{\"command\":\"git commit -m x\"}"}`,
 	}
-	if r := mustRun(t, "agent", "instructions"); !strings.HasPrefix(r.stdout, "# Git identity (gitident)") {
-		t.Errorf("instructions:\n%s", r.stdout)
+	for name, p := range payloads {
+		r := runStdin(t, p, "agent", "hook", name)
+		if !strings.Contains(r.stderr, "no_identity") {
+			t.Errorf("%s: not blocked (exit %d)\nstdout: %s\nstderr: %s", name, r.code, r.stdout, r.stderr)
+			continue
+		}
+		switch name {
+		case "cursor":
+			if r.code != 0 || !strings.Contains(r.stdout, `"permission":"deny"`) || !strings.Contains(r.stdout, `"agent_message":"gitident blocked`) {
+				t.Errorf("cursor deny: %+v", r)
+			}
+		case "copilot":
+			if r.code != 0 || !strings.Contains(r.stdout, `"permissionDecision":"deny"`) {
+				t.Errorf("copilot deny: %+v", r)
+			}
+		default:
+			if r.code != 2 || r.stdout != "" {
+				t.Errorf("%s deny: %+v", name, r)
+			}
+		}
+	}
+	// Allowed commands print nothing, for every agent.
+	for _, name := range []string{"cursor", "copilot", "gemini"} {
+		ok := strings.ReplaceAll(payloads[name], "git commit -m x", "git status")
+		if r := runStdin(t, ok, "agent", "hook", name); r.code != 0 || r.stdout != "" || r.stderr != "" {
+			t.Errorf("%s allow: %+v", name, r)
+		}
+	}
+	// Copilot's other tools pass.
+	if r := runStdin(t, `{"toolName":"edit","toolArgs":{"command":"git commit"}}`, "agent", "hook", "copilot"); r.code != 0 || r.stdout != "" {
+		t.Errorf("copilot edit tool: %+v", r)
 	}
 }
 

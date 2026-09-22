@@ -215,28 +215,48 @@ through, 1 for an identity problem and 2 when only signing would fail.
 | `signing_failed` | Commits are signed, but the test signature failed or would need a passphrase. |
 | `not_a_repo`, `no_config` | Not in a repository, or `profiles.yaml` is missing or invalid. |
 
-### Claude Code
+### Coding agents
 
 ```sh
-gitident agent install            # ~/.claude (all projects); --scope project|local for one repo
+gitident agent install                    # every supported agent found on this machine
+gitident agent install cursor codex       # or name them
+gitident agent install --scope project    # files in this repository, shared with the team
+gitident agent list                       # what is supported, what was found
+gitident agent status                     # what is installed where
 ```
 
-This installs two things:
+Each agent gets two things:
 
-- **A PreToolUse hook** that looks at every shell command Claude is about to
-  run. It blocks `git commit`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`,
+- **A hook** that runs before every shell command the agent executes. It
+  blocks `git commit`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`,
   `pull` and annotated tags when `preflight` finds a problem, and blocks
   setting the identity by hand (`git config user.email`, `git -c user.name=…`,
-  `GIT_AUTHOR_*` variables). Claude sees the problem and its fix and can ask
+  `GIT_AUTHOR_*` variables). The agent sees the problem and its fix and can ask
   you. It understands `cd dir && git …` and `git -C dir …`. Commands made with
   `--no-gpg-sign` skip the signing test.
-- **A `gitident` skill** telling Claude to run `preflight` before committing
-  and how to handle each problem code.
+- **Guidance** to run `preflight` before committing and how to handle each
+  problem code: a skill, a rule file, or a marked section in the agent's
+  instructions file that gitident keeps up to date and removes cleanly.
 
-`gitident agent status` shows what is installed; `gitident agent uninstall`
-removes both and leaves the rest of your settings as they were. For other
-agents, `gitident agent instructions` prints the same guidance for your
-`AGENTS.md` or rule files.
+| Agent | Hook (user scope) | Guidance (user / project scope) |
+| --- | --- | --- |
+| `claude` Claude Code | `PreToolUse` in `~/.claude/settings.json` | skill `~/.claude/skills/gitident/SKILL.md` / `.claude/skills/…` |
+| `codex` OpenAI Codex | `PreToolUse` in `~/.codex/hooks.json` | section in `~/.codex/AGENTS.md` / `AGENTS.md` |
+| `cursor` Cursor | `beforeShellExecution` in `~/.cursor/hooks.json` | — (user rules are UI-only) / `.cursor/rules/gitident.mdc` |
+| `gemini` Gemini CLI | `BeforeTool` in `~/.gemini/settings.json` | section in `~/.gemini/GEMINI.md` / `GEMINI.md` |
+| `copilot` GitHub Copilot CLI | `preToolUse` in `~/.copilot/hooks/gitident.json` | section in `~/.copilot/copilot-instructions.md` / `.github/copilot-instructions.md` |
+| `factory` Factory Droid | `PreToolUse` in `~/.factory/hooks.json` | — / `AGENTS.md` |
+| `windsurf` Windsurf | `pre_run_command` in `~/.codeium/windsurf/hooks.json` | — / `AGENTS.md` |
+
+`--scope project` puts the hooks in the project's own agent folders
+(`.claude/`, `.codex/`, `.cursor/`, …). `--scope local` is Claude Code's
+`.claude/settings.local.json`. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+`COPILOT_HOME` and `GEMINI_CLI_HOME` are honoured. Existing hooks and settings
+of other tools are left as they are, and `gitident agent uninstall` removes
+only what gitident added.
+
+For any other agent, `gitident agent instructions` prints the same guidance
+to paste into its rules file.
 
 ### New clones
 
@@ -312,7 +332,7 @@ don't block `sync`.
 | `gitident unuse [dir]` | Remove the pin. Warns if a `repos` entry will keep applying. |
 | `gitident apply [dir…\|--all] [--force] [--dry-run]` | Copy the repository's profile into its `.git/config`. See [Copying profiles into repositories](#copying-profiles-into-repositories). |
 | `gitident unapply [dir…\|--all] [--force] [--dry-run]` | Remove copies made by `apply`. |
-| `gitident agent install\|uninstall\|status [claude] [--scope user\|project\|local]` | Install the Claude Code hook and skill. `gitident agent instructions` prints guidance for other agents. |
+| `gitident agent install\|uninstall\|status [agent…] [--scope user\|project\|local]` | Install hooks and guidance for coding agents (Claude Code, Codex, Cursor, Gemini CLI, Copilot CLI, Factory, Windsurf). `agent list` shows support; `agent instructions` prints the guidance. |
 | `gitident doctor` | Check the git version, config, key files, GPG/SSH signing setup, and whether the block and fragments are current. |
 | `gitident uninstall [--dry-run]` | Remove the managed block, the fragments and the profile copies in repositories. Keeps `profiles.yaml`. |
 | `gitident completion bash\|zsh\|fish` | Print shell completions. Profile names are completed for `use`. |
