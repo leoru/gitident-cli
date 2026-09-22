@@ -14,6 +14,9 @@ func mkRepo(t *testing.T, dir string) {
 	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestFind(t *testing.T) {
@@ -31,6 +34,9 @@ func TestFind(t *testing.T) {
 	wt := filepath.Join(root, "wt")
 	_ = os.MkdirAll(wt, 0o755)
 	_ = os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: /elsewhere\n"), 0o644)
+	// An empty .git directory is not a repository; its children are still scanned.
+	_ = os.MkdirAll(filepath.Join(root, "broken", ".git"), 0o755)
+	mkRepo(t, filepath.Join(root, "broken", "inner"))
 	// Symlinks inside the tree are not followed.
 	if err := os.Symlink(filepath.Join(root, "group"), filepath.Join(root, "link")); err != nil {
 		t.Fatal(err)
@@ -42,6 +48,7 @@ func TestFind(t *testing.T) {
 	}
 	want := []string{
 		filepath.Join(root, "a"),
+		filepath.Join(root, "broken", "inner"),
 		filepath.Join(root, "group", "b"),
 		filepath.Join(root, "group", "deep", "c"),
 		filepath.Join(root, "wt"),

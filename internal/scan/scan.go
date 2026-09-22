@@ -23,8 +23,9 @@ type Options struct {
 }
 
 // Find walks roots and returns the working-tree roots of all repositories found,
-// sorted and de-duplicated. A directory containing ".git" (a directory, or a file
-// for linked worktrees and submodules) is a repository and is not descended into.
+// sorted and de-duplicated. A directory containing ".git" (a git directory with a
+// HEAD, or a file for linked worktrees and submodules) is a repository and is not
+// descended into.
 // Hidden directories are skipped (except the roots themselves) and symlinks are
 // not followed. Missing roots are ignored.
 func Find(roots []string, opts Options) ([]string, error) {
@@ -56,7 +57,7 @@ func Find(roots []string, opts Options) ([]string, error) {
 			if p != real && ignored(shown, d.Name(), opts.Ignore) {
 				return filepath.SkipDir
 			}
-			if _, err := os.Lstat(filepath.Join(p, ".git")); err == nil {
+			if isRepo(p) {
 				key := paths.Real(p)
 				if !seen[key] {
 					seen[key] = true
@@ -72,6 +73,21 @@ func Find(roots []string, opts Options) ([]string, error) {
 	}
 	sort.Strings(repos)
 	return repos, nil
+}
+
+// isRepo reports whether dir has a ".git" file (worktree, submodule) or a
+// ".git" directory that looks like a real git dir; an empty or broken ".git"
+// directory is not a repository to git either.
+func isRepo(dir string) bool {
+	fi, err := os.Lstat(filepath.Join(dir, ".git"))
+	if err != nil {
+		return false
+	}
+	if !fi.IsDir() {
+		return true
+	}
+	_, err = os.Stat(filepath.Join(dir, ".git", "HEAD"))
+	return err == nil
 }
 
 func ignored(path, name string, extra []string) bool {
