@@ -17,9 +17,16 @@ import (
 // form the hook command.
 const HookArgs = "agent hook"
 
-// isOurCommand reports whether a hook command is gitident's.
+// isOurCommand reports whether a hook command is gitident's: "<binary> agent
+// hook <agent>", where the binary may be a full path under any name.
 func isOurCommand(cmd string) bool {
-	return strings.Contains(cmd, paths.AppName) && strings.Contains(cmd, " "+HookArgs+" ")
+	fields := strings.Fields(cmd)
+	n := len(fields)
+	if n < 4 || fields[n-3] != "agent" || fields[n-2] != "hook" {
+		return false
+	}
+	_, ok := Find(fields[n-1])
+	return ok
 }
 
 // hookCommandOf extracts the command string of a hook entry in any shape.
@@ -187,7 +194,7 @@ func (t *HookTarget) ApplyHook(cmd string, dryRun bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if t.shape == shapeOwnFile && old != nil && !bytes.Contains(old, []byte(paths.AppName)) {
+	if t.shape == shapeOwnFile && old != nil && !bytes.Contains(old, []byte(" "+HookArgs+" ")) {
 		return false, fmt.Errorf("%s exists and was not written by gitident; not replacing it", paths.Contract(t.Path))
 	}
 	if old == nil && cmd == "" {

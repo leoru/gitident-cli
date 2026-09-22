@@ -71,3 +71,18 @@ func TestMakesCommitAndSigning(t *testing.T) {
 		t.Error("SkipsSigning not detected")
 	}
 }
+
+func TestIsOurCommand(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		"gitident agent hook claude":                     true,
+		"'/opt/x/bin/gi tident' agent hook cursor":       true,
+		"/tmp/go-build1/b111/cli.test agent hook gemini": true,
+		"gitident agent hook nope":                       false,
+		"my-linter":                                      false,
+		"agent hook claude":                              false,
+	} {
+		if got := isOurCommand(cmd); got != want {
+			t.Errorf("isOurCommand(%q) = %v", cmd, got)
+		}
+	}
+}

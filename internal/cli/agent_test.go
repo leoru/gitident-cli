@@ -106,7 +106,15 @@ func TestAgentHook(t *testing.T) {
 	}
 }
 
+// hideBinary makes hook commands use the test binary's path, as on a machine
+// where gitident is not on PATH, so tests behave the same everywhere.
+func hideBinary(t *testing.T) {
+	t.Helper()
+	t.Setenv("PATH", "/usr/bin:/bin")
+}
+
 func TestAgentInstallClaude(t *testing.T) {
+	hideBinary(t)
 	home := testutil.Home(t)
 	dir := filepath.Join(home, "claude")
 	t.Setenv("CLAUDE_CONFIG_DIR", dir)
@@ -136,7 +144,7 @@ func TestAgentInstallClaude(t *testing.T) {
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
 	s := string(data)
-	for _, want := range []string{`"command": "my-linter"`, `"command": "notify"`, `"Bash(ls:*)"`, "agent hook claude", `"timeout": 30`} {
+	for _, want := range []string{`"command": "my-linter"`, `"command": "notify"`, `"Bash(ls:*)"`, "agent hook claude", `"timeout": 30`, "cli.test"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("settings lack %s:\n%s", want, s)
 		}
@@ -181,6 +189,7 @@ func TestAgentInstallClaude(t *testing.T) {
 }
 
 func TestAgentInstallAll(t *testing.T) {
+	hideBinary(t)
 	home := testutil.Home(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("CODEX_HOME", "")
@@ -214,7 +223,7 @@ func TestAgentInstallAll(t *testing.T) {
 		".cursor/hooks.json":               {"other-hook.sh", `"stop"`, "agent hook cursor", `"version": 1`},
 		".gemini/settings.json":            {`"mcpServers"`, "after.sh", `"BeforeTool"`, `"matcher": "run_shell_command"`, "agent hook gemini"},
 		".gemini/GEMINI.md":                {"gitident preflight --json"},
-		".copilot/hooks/gitident.json":     {`"preToolUse"`, `"bash": "gitident agent hook copilot"`, `"version": 1`},
+		".copilot/hooks/gitident.json":     {`"preToolUse"`, `agent hook copilot"`, `"version": 1`},
 		".copilot/copilot-instructions.md": {"gitident preflight --json"},
 		".factory/hooks.json":              {`"matcher": "Execute"`, "agent hook factory"},
 		".codeium/windsurf/hooks.json":     {`"pre_run_command"`, "agent hook windsurf", `"show_output": true`},
@@ -259,7 +268,7 @@ func TestAgentInstallAll(t *testing.T) {
 	_ = os.Chdir(proj)
 	mustRun(t, "agent", "install", "--scope", "project", "cursor", "codex", "factory")
 	for _, rel := range []string{"proj/.cursor/hooks.json", "proj/.cursor/rules/gitident.mdc", "proj/.codex/hooks.json", "proj/AGENTS.md", "proj/.factory/hooks.json"} {
-		if !strings.Contains(read(rel), "gitident") {
+		if got := read(rel); !strings.Contains(got, "agent hook") && !strings.Contains(got, "gitident preflight") {
 			t.Errorf("%s not written", rel)
 		}
 	}
