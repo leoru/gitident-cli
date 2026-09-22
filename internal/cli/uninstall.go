@@ -9,14 +9,17 @@ import (
 	"strings"
 
 	"github.com/leoru/gitident-cli/internal/fsutil"
+	"github.com/leoru/gitident-cli/internal/materialize"
 	"github.com/leoru/gitident-cli/internal/paths"
 	"github.com/leoru/gitident-cli/internal/render"
 )
 
 const uninstallUsage = `usage: gitident uninstall [--dry-run]
 
-Remove the managed block from your global gitconfig and delete the generated
-fragments in ~/.gitconfig.d/gitident. profiles.yaml is kept. Repositories
+Remove the managed block from your global gitconfig, delete the generated
+fragments in ~/.gitconfig.d/gitident, and remove the profiles copied into
+repositories by "gitident apply" (values changed by hand since are kept).
+profiles.yaml is kept. Repositories
 pinned with "gitident use" keep an include.path to a now-missing fragment
 (git ignores it); run "gitident unuse" in them first if you want them clean.
 `
@@ -57,6 +60,26 @@ func (a *App) cmdUninstall(args []string) error {
 		}
 	}
 
+	reg, err := materialize.LoadRegistry()
+	if err != nil {
+		return err
+	}
+	for _, f := range reg {
+		if _, err := os.Stat(f); err != nil {
+			continue
+		}
+		res, err := materialize.Remove(f, materialize.Options{DryRun: *dryRun})
+		switch {
+		case err != nil:
+			a.warn("%s: %v", paths.Contract(f), err)
+		case res.Action == materialize.Removed:
+			a.printf("%s profile %q from %s\n", verb, res.Previous, paths.Contract(f))
+		case res.Action == materialize.Edited:
+			a.warn("%s: values copied from profile %q were changed by hand; left in place (`gitident unapply --force` there removes them)",
+				paths.Contract(f), res.Previous)
+		}
+	}
+
 	dir := paths.FragmentDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -78,7 +101,7 @@ func (a *App) cmdUninstall(args []string) error {
 	if !*dryRun {
 		_ = os.Remove(dir) // only succeeds when empty
 	}
-	if !found && len(entries) == 0 {
+	if !found && len(entries) == 0 && len(reg) == 0 {
 		a.printf("nothing to remove\n")
 	}
 	return nil

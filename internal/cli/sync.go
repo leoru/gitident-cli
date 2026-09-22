@@ -22,6 +22,8 @@ Render profiles.yaml into gitconfig:
   1. one fragment per profile in ~/.gitconfig.d/gitident/<profile>.gitconfig
   2. a managed block of includeIf rules in your global gitconfig
      (everything outside the block is left untouched)
+  3. copies of profiles in repositories' .git/config made by "gitident apply"
+     or ` + "`materialize: true`" + ` are brought up to date (see "gitident help apply")
 
 flags:
   --dry-run    show what would change, write nothing
@@ -143,6 +145,13 @@ func (a *App) sync(cfg *config.Config, opts syncOptions) error {
 		}
 	}
 
+	// 4. Materialized copies in repositories.
+	nCopies, held, err := a.syncMaterialized(cfg, opts.dryRun)
+	if err != nil {
+		return err
+	}
+	changed += nCopies
+
 	a.syncWarnings(cfg, global)
 
 	nRepos := 0
@@ -150,6 +159,9 @@ func (a *App) sync(cfg *config.Config, opts syncOptions) error {
 		nRepos += len(p.Repos)
 	}
 	summary := fmt.Sprintf("%s, %s, %s", plural(len(cfg.Profiles), "profile"), plural(len(cfg.Rules), "rule"), plural(nRepos, "repo"))
+	if held > 0 {
+		summary += ", " + plural(held, "materialized copy")
+	}
 	switch {
 	case changed == 0:
 		a.printf("up to date (%s)\n", summary)

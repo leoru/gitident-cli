@@ -19,6 +19,7 @@ const CurrentVersion = 1
 type Config struct {
 	Version        int                 `yaml:"version"`
 	StrictIdentity *bool               `yaml:"strict_identity,omitempty"`
+	Materialize    *bool               `yaml:"materialize,omitempty"`
 	Profiles       map[string]*Profile `yaml:"profiles"`
 	Rules          []Rule              `yaml:"rules,omitempty"`
 	Scan           *Scan               `yaml:"scan,omitempty"`
@@ -34,6 +35,8 @@ type Profile struct {
 	SSHKey     string            `yaml:"ssh_key,omitempty"`
 	Extra      map[string]string `yaml:"extra,omitempty"`
 	Repos      []string          `yaml:"repos,omitempty"`
+	// Materialize overrides the top-level materialize for this profile.
+	Materialize *bool `yaml:"materialize,omitempty"`
 }
 
 // Rule maps directories and/or remote URL globs to a profile.
@@ -52,6 +55,25 @@ type Scan struct {
 // Strict reports whether user.useConfigOnly should be set (default true).
 func (c *Config) Strict() bool {
 	return c.StrictIdentity == nil || *c.StrictIdentity
+}
+
+// Materializes reports whether sync copies profile's settings into the
+// .git/config of every repository it applies to (default false).
+func (c *Config) Materializes(profile string) bool {
+	if p, ok := c.Profiles[profile]; ok && p.Materialize != nil {
+		return *p.Materialize
+	}
+	return c.Materialize != nil && *c.Materialize
+}
+
+// MaterializesAny reports whether any profile materializes.
+func (c *Config) MaterializesAny() bool {
+	for name := range c.Profiles {
+		if c.Materializes(name) {
+			return true
+		}
+	}
+	return false
 }
 
 // ProfileNames returns the profile names sorted alphabetically; this is the

@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/leoru/gitident-cli/internal/config"
 	"github.com/leoru/gitident-cli/internal/inspect"
 	"github.com/leoru/gitident-cli/internal/match"
+	"github.com/leoru/gitident-cli/internal/materialize"
 	"github.com/leoru/gitident-cli/internal/paths"
+	"github.com/leoru/gitident-cli/internal/render"
 	"github.com/leoru/gitident-cli/internal/scan"
 )
 
@@ -24,6 +24,8 @@ Scan for repositories and report, for each one:
   NO IDENTITY      no user.email at all (commits fail in strict mode)
   UNKNOWN EMAIL    user.email is not in any profile
   MISMATCH         effective profile differs from what rules / repos / pin say
+  STALE            the profile copy in .git/config (gitident apply) is out of
+                   date, changed by hand, or missing although materialize is on
   MISSING          a path listed in ` + "`repos`" + ` does not exist or is not a repository
   NOT CLONED       a URL listed in ` + "`repos`" + ` has no clone under the roots (info)
 
@@ -41,6 +43,7 @@ const (
 	statusNoIdent   = "NO IDENTITY"
 	statusUnknown   = "UNKNOWN EMAIL"
 	statusMismatch  = "MISMATCH"
+	statusStale     = "STALE"
 	statusMissing   = "MISSING"
 	statusNotCloned = "NOT CLONED"
 )
@@ -98,36 +101,9 @@ func (a *App) cmdCheck(args []string) error {
 
 // runCheck scans roots (or the default roots) and classifies every repository.
 func runCheck(cfg *config.Config, roots []string) ([]checkItem, error) {
-	if len(roots) == 0 {
-		roots = DefaultRoots(cfg)
-	}
-	repos, err := scan.Find(roots, scan.Options{Ignore: cfg.ScanIgnore()})
+	repos, items, err := discover(cfg, roots)
 	if err != nil {
 		return nil, err
-	}
-
-	var items []checkItem
-	seen := map[string]bool{}
-	for _, r := range repos {
-		seen[paths.Real(r)] = true
-	}
-	// Listed repo paths are always checked, even outside the roots.
-	for _, name := range cfg.ProfileNames() {
-		for _, repo := range cfg.Profiles[name].Repos {
-			if paths.IsURL(repo) {
-				continue
-			}
-			abs := paths.Abs(repo)
-			if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
-				items = append(items, checkItem{Status: statusMissing, Path: paths.Contract(abs), Profile: name,
-					Detail: fmt.Sprintf("listed in profile %q but not a git repository", name), Problem: true})
-				continue
-			}
-			if !seen[paths.Real(abs)] {
-				seen[paths.Real(abs)] = true
-				repos = append(repos, abs)
-			}
-		}
 	}
 
 	results := inspectAll(cfg, repos)
@@ -141,6 +117,11 @@ func runCheck(cfg *config.Config, roots []string) ([]checkItem, error) {
 			remotes[paths.NormalizeURL(rm.URL)] = true
 		}
 		it := classify(cfg, r.res)
+		// A stale copy explains an unknown or mismatched email better than
+		// those statuses do.
+		if problem := copyProblem(cfg, r.res); problem != "" && (it.Status == statusOK || r.res.Materialized != "") {
+			it.Status, it.Problem, it.Detail = statusStale, true, problem
+		}
 		it.Path = paths.Contract(repos[i])
 		items = append(items, it)
 	}
@@ -157,6 +138,43 @@ func runCheck(cfg *config.Config, roots []string) ([]checkItem, error) {
 	return items, nil
 }
 
+// discover returns the repositories under roots (DefaultRoots when empty) plus
+// every listed repo path, and MISSING items for listed paths that are not
+// repositories.
+func discover(cfg *config.Config, roots []string) ([]string, []checkItem, error) {
+	if len(roots) == 0 {
+		roots = DefaultRoots(cfg)
+	}
+	repos, err := scan.Find(roots, scan.Options{Ignore: cfg.ScanIgnore()})
+	if err != nil {
+		return nil, nil, err
+	}
+	var missing []checkItem
+	seen := map[string]bool{}
+	for _, r := range repos {
+		seen[paths.Real(r)] = true
+	}
+	// Listed repo paths are always included, even outside the roots.
+	for _, name := range cfg.ProfileNames() {
+		for _, repo := range cfg.Profiles[name].Repos {
+			if paths.IsURL(repo) {
+				continue
+			}
+			abs := paths.Abs(repo)
+			if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
+				missing = append(missing, checkItem{Status: statusMissing, Path: paths.Contract(abs), Profile: name,
+					Detail: fmt.Sprintf("listed in profile %q but not a git repository", name), Problem: true})
+				continue
+			}
+			if !seen[paths.Real(abs)] {
+				seen[paths.Real(abs)] = true
+				repos = append(repos, abs)
+			}
+		}
+	}
+	return repos, missing, nil
+}
+
 type inspected struct {
 	res *inspect.Result
 	err error
@@ -164,27 +182,10 @@ type inspected struct {
 
 func inspectAll(cfg *config.Config, repos []string) []inspected {
 	out := make([]inspected, len(repos))
-	jobs := make(chan int)
-	var wg sync.WaitGroup
-	workers := runtime.NumCPU()
-	if workers > 8 {
-		workers = 8
-	}
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := range jobs {
-				res, err := inspect.Inspect(cfg, repos[i])
-				out[i] = inspected{res, err}
-			}
-		}()
-	}
-	for i := range repos {
-		jobs <- i
-	}
-	close(jobs)
-	wg.Wait()
+	forEach(len(repos), func(i int) {
+		res, err := inspect.Inspect(cfg, repos[i])
+		out[i] = inspected{res, err}
+	})
 	return out
 }
 
@@ -228,6 +229,9 @@ func classify(cfg *config.Config, r *inspect.Result) checkItem {
 		if r.Pinned != "" {
 			notes = append(notes, "pinned")
 		}
+		if r.Via == inspect.ViaMaterialized {
+			notes = append(notes, "copied into .git/config")
+		}
 		if r.OutsideGitident() {
 			notes = append(notes, "set outside gitident: "+paths.Contract(r.Origins["user.email"]))
 		}
@@ -268,7 +272,7 @@ func (a *App) printCheck(items []checkItem, quiet bool) {
 		return
 	}
 	var parts []string
-	for _, s := range []string{statusOK, statusNoIdent, statusUnknown, statusMismatch, statusMissing, "ERROR", statusNotCloned} {
+	for _, s := range []string{statusOK, statusNoIdent, statusUnknown, statusMismatch, statusStale, statusMissing, "ERROR", statusNotCloned} {
 		if counts[s] > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", counts[s], strings.ToLower(s)))
 		}
@@ -280,9 +284,37 @@ func (a *App) printCheck(items []checkItem, quiet bool) {
 	if counts[statusMismatch] > 0 {
 		a.printf("hint: run `gitident sync`; if it persists, look for user.* set in the file shown (often .git/config) and remove it\n")
 	}
+	if counts[statusStale] > 0 {
+		a.printf("hint: run `gitident sync`; copies changed by hand need `gitident apply --force` (restore) or `gitident unapply --force` (remove)\n")
+	}
 	if counts[statusMissing] > 0 {
 		a.printf("hint: remove stale `repos` entries from profiles.yaml, or clone the repositories there\n")
 	}
+}
+
+// copyProblem describes what is wrong with a repository's materialized copy
+// ("" when it is current, or when there is none and none is wanted).
+func copyProblem(cfg *config.Config, r *inspect.Result) string {
+	if r.Materialized == "" {
+		if t := r.TargetProfile(); cfg.Profiles[t] != nil && cfg.Materializes(t) {
+			return fmt.Sprintf("profile %q has materialize on but .git/config has no copy yet — run `gitident sync`", t)
+		}
+		return ""
+	}
+	rec, err := materialize.Read(r.LocalConfig())
+	if err != nil {
+		return err.Error()
+	}
+	p := cfg.Profiles[rec.Profile]
+	switch {
+	case rec.Edited():
+		return fmt.Sprintf("values copied from profile %q were changed by hand in .git/config", rec.Profile)
+	case p == nil:
+		return fmt.Sprintf(".git/config holds a copy of profile %q, which no longer exists — run `gitident sync`", rec.Profile)
+	case !rec.UpToDate(rec.Profile, render.Settings(p)):
+		return fmt.Sprintf("the copy of profile %q in .git/config is out of date — run `gitident sync`", rec.Profile)
+	}
+	return ""
 }
 
 // DefaultRoots returns the directories check and import scan by default: every

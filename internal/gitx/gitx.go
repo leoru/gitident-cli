@@ -193,6 +193,42 @@ func FileUnsetValue(file, key, value string) error {
 	return err
 }
 
+// FileSet sets key to value in a config file, replacing every existing value.
+func FileSet(file, key, value string) error {
+	_, err := Run("", "config", "--file", file, "--replace-all", key, value)
+	return err
+}
+
+// FileUnsetAll removes every value of key from a config file.
+func FileUnsetAll(file, key string) error {
+	_, err := Run("", "config", "--file", file, "--unset-all", key)
+	if err != nil && errorCode(err) == 5 {
+		return nil // nothing to unset
+	}
+	return err
+}
+
+// FileRemoveSection removes a section from a config file if it exists.
+func FileRemoveSection(file, name string) error {
+	_, err := Run("", "config", "--file", file, "--remove-section", name)
+	if err != nil && errorCode(err) == 128 {
+		if vals, _ := ListFile(file); !hasSection(vals, name) {
+			return nil // no such section
+		}
+	}
+	return err
+}
+
+func hasSection(entries []Entry, name string) bool {
+	prefix := strings.ToLower(name) + "."
+	for _, e := range entries {
+		if strings.HasPrefix(e.Key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func errorCode(err error) int {
 	var ge *Error
 	if errors.As(err, &ge) {

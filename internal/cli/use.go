@@ -11,6 +11,7 @@ import (
 	"github.com/leoru/gitident-cli/internal/fsutil"
 	"github.com/leoru/gitident-cli/internal/gitx"
 	"github.com/leoru/gitident-cli/internal/inspect"
+	"github.com/leoru/gitident-cli/internal/materialize"
 	"github.com/leoru/gitident-cli/internal/paths"
 )
 
@@ -90,7 +91,26 @@ func (a *App) cmdUse(args []string) error {
 	if _, err := os.Stat(paths.FragmentPath(profile)); err != nil {
 		a.warn("%s does not exist yet — run `gitident sync`", paths.Contract(paths.FragmentPath(profile)))
 	}
-	return nil
+	return a.refreshCopy(cfg, dir)
+}
+
+// refreshCopy brings a repository's materialized copy in line with its
+// (possibly just changed) pin.
+func (a *App) refreshCopy(cfg *config.Config, dir string) error {
+	r, err := inspect.Inspect(cfg, dir)
+	if err != nil || r.CommonDir == "" {
+		return err
+	}
+	if r.Materialized == "" && !cfg.Materializes(r.TargetProfile()) {
+		return nil
+	}
+	outs := materializeAll(cfg, []*inspect.Result{r}, modeSync, materialize.Options{})
+	for _, o := range outs {
+		if o.err != nil || o.skip != "" || o.res.Action != materialize.Unchanged {
+			a.reportOutcome(o, false)
+		}
+	}
+	return a.updateRegistry(outs, false)
 }
 
 // repoEntry picks the repos entry that identifies r in profiles.yaml: the main
@@ -212,6 +232,12 @@ func (a *App) cmdUnuse(args []string) error {
 		if owner, entry := listedIn(cfg, r); owner != "" {
 			a.warn("%s is still listed as %s in profile %q's repos; that entry keeps applying profile %q (remove it from profiles.yaml and run `gitident sync` to change that)",
 				paths.Contract(r.Repo), entry, owner, owner)
+		}
+		if rep := cfg.Validate(); rep.OK() {
+			if err := a.refreshCopy(cfg, dir); err != nil {
+				return err
+			}
+			r, _ = inspect.Inspect(cfg, dir)
 		}
 		if exp := describeExpected(cfg, r); exp != "" {
 			a.printf("now: %s\n", exp)

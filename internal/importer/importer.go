@@ -432,6 +432,9 @@ func (im *importer) scanRepos(roots []string) ([]pendingRepo, []string, error) {
 			if probe.set(e.Key, e.Value) && (probe.Name != "" || probe.Email != "") {
 				hasLocal = true
 			}
+			if strings.ToLower(e.Key) == "gitident.profile" && pinHint == "" {
+				pinHint = e.Value // a copy made by `gitident apply`
+			}
 			if strings.ToLower(e.Key) == "include.path" {
 				hasLocal = true
 				if p, ok := paths.ProfileFromFragment(e.Value); ok {

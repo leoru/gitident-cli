@@ -18,7 +18,7 @@ The bash script also completes "git ident ..." when git's completion is loaded.
 const bashCompletion = `# bash completion for gitident
 _gitident_complete() {
     local cur=$1 cmd=$2 pos=$3
-    local cmds="init import sync which check use unuse doctor uninstall completion version help"
+    local cmds="init import sync which check use unuse apply unapply doctor uninstall completion version help"
     if [ "$pos" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
         return
@@ -33,6 +33,7 @@ _gitident_complete() {
                 which) flags="--json" ;;
                 check) flags="--json -q" ;;
                 use) flags="--save" ;;
+                apply|unapply) flags="--all --force --dry-run" ;;
                 uninstall) flags="--dry-run" ;;
             esac
             COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
@@ -45,9 +46,9 @@ _gitident_complete() {
             else
                 COMPREPLY=( $(compgen -d -- "$cur") )
             fi ;;
-        which|unuse|check|import) COMPREPLY=( $(compgen -d -- "$cur") ) ;;
+        which|unuse|apply|unapply|check|import) COMPREPLY=( $(compgen -d -- "$cur") ) ;;
         completion) COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") ) ;;
-        help) COMPREPLY=( $(compgen -W "init import sync which check use unuse doctor uninstall completion version" -- "$cur") ) ;;
+        help) COMPREPLY=( $(compgen -W "init import sync which check use unuse apply unapply doctor uninstall completion version" -- "$cur") ) ;;
     esac
 }
 _gitident() {
@@ -81,6 +82,8 @@ _gitident() {
         'check:audit every repository under the configured roots'
         'use:pin a repository to a profile'
         'unuse:remove a repository pin'
+        'apply:copy a repository'"'"'s profile into its .git/config'
+        'unapply:remove a profile copied by apply'
         'doctor:diagnose the installation'
         'uninstall:remove the managed block and fragments'
         'completion:print a shell completion script'
@@ -101,6 +104,8 @@ _gitident() {
         check) _arguments '--json[machine-readable output]' '-q[only print problems]' '*:root:_directories' ;;
         use) _arguments '--save[also add the repo to profiles.yaml]' '1:profile:_gitident_profiles' '2:directory:_directories' ;;
         unuse) _arguments '1:directory:_directories' ;;
+        apply|unapply) _arguments '--all[every repository]' '--force[overwrite values changed by hand]' \
+                    '--dry-run[show changes, write nothing]' '*:directory:_directories' ;;
         uninstall) _arguments '--dry-run[show changes, write nothing]' ;;
         completion) _values 'shell' bash zsh fish ;;
         help) _describe 'command' commands ;;
@@ -111,7 +116,7 @@ _gitident "$@"
 `
 
 const fishCompletion = `# fish completion for gitident
-set -l cmds init import sync which check use unuse doctor uninstall completion version help
+set -l cmds init import sync which check use unuse apply unapply doctor uninstall completion version help
 for bin in gitident git-ident
     complete -c $bin -f
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a init -d 'write a commented sample profiles.yaml'
@@ -121,6 +126,8 @@ for bin in gitident git-ident
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a check -d 'audit every repository under the configured roots'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a use -d 'pin a repository to a profile'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a unuse -d 'remove a repository pin'
+    complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a apply -d "copy a repository's profile into its .git/config"
+    complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a unapply -d 'remove a profile copied by apply'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a doctor -d 'diagnose the installation'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a uninstall -d 'remove the managed block and fragments'
     complete -c $bin -n "not __fish_seen_subcommand_from $cmds" -a completion -d 'print a shell completion script'
@@ -133,8 +140,11 @@ for bin in gitident git-ident
     complete -c $bin -n "__fish_seen_subcommand_from import" -l force -d 'overwrite the existing file'
     complete -c $bin -n "__fish_seen_subcommand_from import" -l from-gitkraken -d 'also read GitKraken profiles'
     complete -c $bin -n "__fish_seen_subcommand_from import" -l interactive -d 'prompt for profile names'
-    complete -c $bin -n "__fish_seen_subcommand_from import check which unuse" -a '(__fish_complete_directories)'
+    complete -c $bin -n "__fish_seen_subcommand_from import check which unuse apply unapply" -a '(__fish_complete_directories)'
     complete -c $bin -n "__fish_seen_subcommand_from sync" -l dry-run -d 'show changes, write nothing'
+    complete -c $bin -n "__fish_seen_subcommand_from apply unapply" -l all -d 'every repository'
+    complete -c $bin -n "__fish_seen_subcommand_from apply unapply" -l force -d 'overwrite values changed by hand'
+    complete -c $bin -n "__fish_seen_subcommand_from apply unapply" -l dry-run -d 'show changes, write nothing'
     complete -c $bin -n "__fish_seen_subcommand_from sync" -l no-prune -d 'keep stale fragments'
     complete -c $bin -n "__fish_seen_subcommand_from which check" -l json -d 'machine-readable output'
     complete -c $bin -n "__fish_seen_subcommand_from check" -s q -d 'only print problems'

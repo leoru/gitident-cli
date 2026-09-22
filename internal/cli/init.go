@@ -32,6 +32,11 @@ version: 1
 # Refuse to commit in repositories that match no profile (sets user.useConfigOnly).
 strict_identity: true
 
+# Also copy each profile's settings into the .git/config of every repository it
+# applies to, for tools that ignore includeIf (dev containers, some GUI clients).
+# Can be set per profile too. See ` + "`gitident help apply`" + `.
+# materialize: false
+
 profiles:
   personal:
     name: %s

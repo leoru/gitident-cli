@@ -44,6 +44,8 @@ func commands() []command {
 		{name: "check", summary: "audit every repository under the configured roots", usage: checkUsage, run: (*App).cmdCheck},
 		{name: "use", summary: "pin a repository to a profile", usage: useUsage, run: (*App).cmdUse},
 		{name: "unuse", summary: "remove a repository's pin", usage: unuseUsage, run: (*App).cmdUnuse},
+		{name: "apply", summary: "copy a repository's profile into its .git/config", usage: applyUsage, run: (*App).cmdApply},
+		{name: "unapply", summary: "remove a profile copied by apply", usage: unapplyUsage, run: (*App).cmdUnapply},
 		{name: "doctor", summary: "diagnose the installation", usage: doctorUsage, run: (*App).cmdDoctor},
 		{name: "uninstall", summary: "remove the managed block and fragments", usage: uninstallUsage, run: (*App).cmdUninstall},
 		{name: "completion", summary: "print a shell completion script", usage: completionUsage, run: (*App).cmdCompletion},

@@ -4,6 +4,7 @@ This is the full reference. For a quick introduction, see the [README](../README
 
 - [How it works](#how-it-works)
 - [Which profile wins](#which-profile-wins)
+- [Copying profiles into repositories](#copying-profiles-into-repositories)
 - [Configuration reference](#configuration-reference)
 - [Commands](#commands)
 - [Migrating an existing setup](#migrating-an-existing-setup)
@@ -116,6 +117,63 @@ Remote globs follow git's own rules: `*` matches anything except `/`, and `**`
 matches anything including `/` when it is a whole path component
 (`git@github.com:company/**`).
 
+## Copying profiles into repositories
+
+The includeIf rules only work where git reads your global gitconfig and the
+fragments it includes. Some places don't:
+
+- **Dev containers and remote machines.** VS Code copies `~/.gitconfig` into the
+  container, but not `~/.gitconfig.d/gitident/`, so the includes point nowhere.
+- **Git clients built on libgit2**, which may not evaluate
+  `includeIf "hasconfig:remote.*.url:…"`, so `remotes` rules and URL `repos`
+  entries are invisible to them.
+
+For these, gitident can copy a repository's profile straight into its own
+`.git/config`, which travels with the repository:
+
+```sh
+gitident apply              # the current repository
+gitident apply ~/work/api   # or any others
+gitident apply --all        # every repository a profile applies to
+```
+
+The copy holds everything the fragment would: `user.name`, `user.email`, the
+signing settings, `core.sshCommand` and `extra` keys. Which profile is copied
+follows the usual [precedence](#which-profile-wins): the pin if there is one,
+else rules and `repos` lists.
+
+To have this happen automatically, turn on `materialize`. `sync` then copies
+the profile into every matching repository it finds under the default roots,
+including new clones:
+
+```yaml
+materialize: true          # every profile
+profiles:
+  work:
+    materialize: true      # or per profile (overrides the top-level value)
+```
+
+Copies stay honest:
+
+- gitident records what it wrote in a `[gitident]` section of `.git/config`
+  (profile, keys and a hash of the values), and lists the repository in
+  `~/.gitconfig.d/gitident/materialized.list`.
+- `sync` rewrites every copy when you change `profiles.yaml`, switches it when
+  a pin or rule change gives the repository another profile, and removes it
+  when no profile applies any more. `use` and `unuse` update the copy at once.
+- Values changed by hand since, and local settings gitident didn't write (a
+  `user.email` you set yourself), are never overwritten. `sync` and `apply`
+  report them; `--force` overwrites.
+- `check` reports a copy that is out of date, changed by hand, or missing
+  while `materialize` is on as `STALE`; `doctor` checks every copy too.
+- `gitident unapply [dir…|--all]` removes copies, and `uninstall` removes them
+  all. Turning `materialize` off keeps existing copies (and keeps them
+  current) until you run `unapply`.
+
+One trade-off: a copy only exists after `apply` or `sync` has run, so a fresh
+clone relies on the includeIf rules until then (or fails in strict mode inside
+a container). Run `gitident sync` after cloning when that matters.
+
 ## Configuration reference
 
 The config lives at `$XDG_CONFIG_HOME/gitident/profiles.yaml`
@@ -124,6 +182,7 @@ The config lives at `$XDG_CONFIG_HOME/gitident/profiles.yaml`
 ```yaml
 version: 1                        # required
 strict_identity: true             # user.useConfigOnly (default true)
+materialize: false                # also copy profiles into each repo's .git/config
 
 profiles:
   work:                           # letters, digits, . _ - (becomes a file name)
@@ -139,6 +198,7 @@ profiles:
     repos:                        # explicit repos; beat all rules
       - ~/misc/legacy-thing       # a path (absolute or ~/…)
       - git@github.com:company/infra.git   # or a remote URL
+    materialize: true             # per-profile override of the top-level value
 
 rules:                            # later rules override earlier ones
   - profile: work
@@ -162,13 +222,15 @@ don't block `sync`.
 | --- | --- |
 | `gitident init [--force]` | Write a commented sample `profiles.yaml`, pre-filled with your current global name and email. |
 | `gitident import [roots…] [--write\|--merge\|--force] [--from-gitkraken] [--interactive]` | Build `profiles.yaml` from your existing git setup. Prints to stdout unless `--write` is given. |
-| `gitident sync [--dry-run] [--no-prune]` | Validate, write fragments, delete fragments of removed profiles, and update the managed block. Running it twice changes nothing. |
+| `gitident sync [--dry-run] [--no-prune]` | Validate, write fragments, delete fragments of removed profiles, update the managed block, and bring profile copies in `.git/config` up to date. Running it twice changes nothing. |
 | `gitident which [dir] [--json]` | Show the identity in a directory, where `user.email` comes from, which profile that is, and which profile is expected. |
 | `gitident check [roots…] [--json] [-q]` | Check every repository under the roots (default: all rule dirs plus the parents of listed repos). Exits 1 on problems. |
 | `gitident use <profile> [dir] [--save]` | Pin a repository to a profile. `--save` also adds it to the profile's `repos` (keeping your YAML comments) and syncs. |
 | `gitident unuse [dir]` | Remove the pin. Warns if a `repos` entry will keep applying. |
+| `gitident apply [dir…\|--all] [--force] [--dry-run]` | Copy the repository's profile into its `.git/config`. See [Copying profiles into repositories](#copying-profiles-into-repositories). |
+| `gitident unapply [dir…\|--all] [--force] [--dry-run]` | Remove copies made by `apply`. |
 | `gitident doctor` | Check the git version, config, key files, GPG/SSH signing setup, and whether the block and fragments are current. |
-| `gitident uninstall [--dry-run]` | Remove the managed block and the fragments. Keeps `profiles.yaml`. |
+| `gitident uninstall [--dry-run]` | Remove the managed block, the fragments and the profile copies in repositories. Keeps `profiles.yaml`. |
 | `gitident completion bash\|zsh\|fish` | Print shell completions. Profile names are completed for `use`. |
 | `gitident version` | Print the version. |
 
@@ -178,10 +240,11 @@ Every command is also available as `git ident <command>`.
 
 | Status | Meaning |
 | --- | --- |
-| `ok <profile>` | The identity matches `profiles.yaml`. The line adds `(set outside gitident: <file>)` when the identity comes from somewhere other than a fragment, e.g. `user.email` in `.git/config`. |
+| `ok <profile>` | The identity matches `profiles.yaml`. The line adds `(copied into .git/config)` for copies made by `apply`, and `(set outside gitident: <file>)` when the identity comes from anywhere else, e.g. a `user.email` you set in `.git/config`. |
 | `NO IDENTITY` | The repository has no `user.email`. In strict mode, commits fail here. |
 | `UNKNOWN EMAIL` | The email isn't in any profile. |
 | `MISMATCH` | The effective profile isn't what the rules, `repos` list or pin say. This is usually a leftover `user.email` in `.git/config`, or `sync` hasn't run yet. |
+| `STALE` | The profile copy in `.git/config` (see `apply`) is out of date, was changed by hand, or is missing although `materialize` is on. |
 | `MISSING` | A path in `repos` doesn't exist or isn't a repository. |
 | `NOT CLONED` | A URL in `repos` has no clone under the scanned roots. Informational only. |
 

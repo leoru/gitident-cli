@@ -27,6 +27,7 @@ type whichJSON struct {
 	Profile        string            `json:"profile,omitempty"`
 	Via            string            `json:"via,omitempty"`
 	Pinned         string            `json:"pinned,omitempty"`
+	Materialized   string            `json:"materialized,omitempty"`
 	Expected       string            `json:"expected,omitempty"`
 	ExpectedReason string            `json:"expected_reason,omitempty"`
 	Strict         bool              `json:"strict"`
@@ -62,7 +63,7 @@ func (a *App) cmdWhich(args []string) error {
 	}
 	if *asJSON {
 		out := whichJSON{
-			Dir: r.Dir, Repo: r.Repo, Profile: r.Profile, Via: r.Via, Pinned: r.Pinned,
+			Dir: r.Dir, Repo: r.Repo, Profile: r.Profile, Via: r.Via, Pinned: r.Pinned, Materialized: r.Materialized,
 			Expected: r.Expected.Profile, ExpectedReason: r.Expected.Reason,
 			Strict: r.Strict, CanCommit: r.Email() != "" || !r.Strict,
 			Values: map[string]string{}, Origins: r.Origins,
@@ -96,6 +97,8 @@ func (a *App) printWhich(cfg *config.Config, r *inspect.Result) {
 		row("profile", "NONE — git will guess an identity from the system")
 	case r.Via == inspect.ViaFragment:
 		row("profile", fmt.Sprintf("%s  (via %s)", r.Profile, emailOrigin))
+	case r.Via == inspect.ViaMaterialized:
+		row("profile", fmt.Sprintf("%s  (copied into %s by gitident apply)", r.Profile, emailOrigin))
 	case r.Via == inspect.ViaEmail:
 		row("profile", fmt.Sprintf("%s  (matched by email, not via rules; set in %s)", r.Profile, emailOrigin))
 	default:
@@ -110,6 +113,9 @@ func (a *App) printWhich(cfg *config.Config, r *inspect.Result) {
 	}
 	if r.Pinned != "" {
 		row("pinned", r.Pinned+"  (include.path in "+paths.Contract(r.CommonDir)+"/config)")
+	}
+	if r.Materialized != "" && r.Via != inspect.ViaMaterialized {
+		row("copy", fmt.Sprintf("%s  (in %s)", r.Materialized, paths.Contract(r.LocalConfig())))
 	}
 	if cfg != nil && r.Repo != "" {
 		exp := "none — no rule or repos entry matches"
@@ -128,6 +134,9 @@ func (a *App) printWhich(cfg *config.Config, r *inspect.Result) {
 	}
 
 	if cfg != nil && r.Repo != "" {
+		if problem := copyProblem(cfg, r); problem != "" {
+			a.printf("\nnote: %s\n", problem)
+		}
 		want := r.Expected.Profile
 		if r.Pinned != "" {
 			want = r.Pinned

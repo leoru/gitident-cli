@@ -21,6 +21,8 @@ var IdentityKeys = []string{"user.name", "user.email", "user.signingkey", "commi
 const (
 	ViaFragment = "fragment" // user.email comes from a gitident fragment
 	ViaEmail    = "email"    // user.email matches a profile but was set elsewhere
+	// ViaMaterialized: user.email is a copy gitident wrote into .git/config.
+	ViaMaterialized = "materialized"
 )
 
 // Result is everything known about one directory's identity.
@@ -34,13 +36,15 @@ type Result struct {
 	Values  map[string]string // effective values of IdentityKeys ("" = unset)
 	Origins map[string]string // origin file of each set IdentityKey
 
-	Profile    string // effective profile ("" if not recognised)
-	Via        string // ViaFragment or ViaEmail
-	Ambiguous  []string
-	Pinned     string // profile pinned via include.path in .git/config
-	Strict     bool   // user.useConfigOnly is in effect
-	Expected   match.Expectation
-	HasProfile bool // cfg was available
+	Profile   string // effective profile ("" if not recognised)
+	Via       string // ViaFragment or ViaEmail
+	Ambiguous []string
+	Pinned    string // profile pinned via include.path in .git/config
+	// Materialized is the profile copied into .git/config by `gitident apply`.
+	Materialized string
+	Strict       bool // user.useConfigOnly is in effect
+	Expected     match.Expectation
+	HasProfile   bool // cfg was available
 }
 
 // Email is a shortcut for the effective user.email.
@@ -48,7 +52,24 @@ func (r *Result) Email() string { return r.Values["user.email"] }
 
 // OutsideGitident reports whether user.email was set somewhere other than a fragment.
 func (r *Result) OutsideGitident() bool {
-	return r.Email() != "" && r.Via != ViaFragment
+	return r.Email() != "" && r.Via != ViaFragment && r.Via != ViaMaterialized
+}
+
+// LocalConfig returns the repository's shared config file ("" outside a repository).
+func (r *Result) LocalConfig() string {
+	if r.CommonDir == "" {
+		return ""
+	}
+	return filepath.Join(r.CommonDir, "config")
+}
+
+// TargetProfile returns the profile gitident means this repository to have: its pin,
+// else what rules and repos lists say.
+func (r *Result) TargetProfile() string {
+	if r.Pinned != "" {
+		return r.Pinned
+	}
+	return r.Expected.Profile
 }
 
 // Inspect examines dir. cfg may be nil, in which case profile matching by email
@@ -88,10 +109,7 @@ func Inspect(cfg *config.Config, dir string) (*Result, error) {
 	for _, k := range IdentityKeys {
 		wanted[strings.ToLower(k)] = k
 	}
-	localConfig := ""
-	if r.CommonDir != "" {
-		localConfig = filepath.Join(r.CommonDir, "config")
-	}
+	localConfig := r.LocalConfig()
 	for _, e := range gitx.ParseList(out, true) {
 		origin := e.Origin
 		if origin != "" && !filepath.IsAbs(origin) && !strings.Contains(origin, ":") {
@@ -114,6 +132,8 @@ func Inspect(cfg *config.Config, dir string) (*Result, error) {
 			if p, ok := paths.ProfileFromFragment(resolveInclude(e.Value, origin)); ok {
 				r.Pinned = p
 			}
+		case key == "gitident.profile" && localConfig != "" && paths.SamePath(origin, localConfig):
+			r.Materialized = e.Value
 		case strings.HasPrefix(key, "remote.") && strings.HasSuffix(key, ".url"):
 			name := e.Key[len("remote.") : len(e.Key)-len(".url")]
 			r.Remotes = append(r.Remotes, gitx.Remote{Name: name, URL: e.Value})
@@ -123,6 +143,11 @@ func Inspect(cfg *config.Config, dir string) (*Result, error) {
 	if origin := r.Origins["user.email"]; origin != "" {
 		if p, ok := paths.ProfileFromFragment(origin); ok {
 			r.Profile, r.Via = p, ViaFragment
+		} else if r.Materialized != "" && paths.SamePath(origin, localConfig) {
+			// A copy by `gitident apply` — unless user.email was edited since.
+			if p := profileOf(cfg, r.Materialized); cfg == nil || (p != nil && strings.EqualFold(p.Email, r.Email())) {
+				r.Profile, r.Via = r.Materialized, ViaMaterialized
+			}
 		}
 	}
 	if cfg != nil {
@@ -182,6 +207,13 @@ func ByEmail(cfg *config.Config, email, name string) (string, []string) {
 		}
 	}
 	return candidates[0], candidates[1:]
+}
+
+func profileOf(cfg *config.Config, name string) *config.Profile {
+	if cfg == nil {
+		return nil
+	}
+	return cfg.Profiles[name]
 }
 
 // resolveInclude resolves an include.path value relative to the file containing it.

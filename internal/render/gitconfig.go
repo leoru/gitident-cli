@@ -116,9 +116,10 @@ func (ss *sectionSet) get(name, sub string) *section {
 	return s
 }
 
-// addExtra appends free-form "section[.sub].key" entries: keys for sections that
-// already exist are appended to them (sorted), new sections are appended sorted.
-func (ss *sectionSet) addExtra(extra map[string]string) {
+// extraSettings returns free-form "section[.sub].key" entries sorted by
+// section, subsection and key. Keys for sections a fragment already has are
+// merged into them.
+func extraSettings(extra map[string]string) []Setting {
 	keys := make([]string, 0, len(extra))
 	for k := range extra {
 		keys = append(keys, k)
@@ -134,8 +135,19 @@ func (ss *sectionSet) addExtra(extra map[string]string) {
 		}
 		return ki < kj
 	})
+	out := make([]Setting, 0, len(keys))
 	for _, k := range keys {
-		name, sub, key := SplitKey(k)
-		ss.get(name, sub).add(key, extra[k])
+		out = append(out, Setting{k, extra[k]})
 	}
+	return out
+}
+
+// CanonicalKey returns key the way `git config --list` prints it: section and
+// variable name lower-cased, subsection verbatim.
+func CanonicalKey(k string) string {
+	sec, sub, key := SplitKey(k)
+	if sub == "" {
+		return strings.ToLower(sec) + "." + strings.ToLower(key)
+	}
+	return strings.ToLower(sec) + "." + sub + "." + strings.ToLower(key)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/leoru/gitident-cli/internal/config"
 	"github.com/leoru/gitident-cli/internal/fsutil"
 	"github.com/leoru/gitident-cli/internal/gitx"
+	"github.com/leoru/gitident-cli/internal/materialize"
 	"github.com/leoru/gitident-cli/internal/paths"
 	"github.com/leoru/gitident-cli/internal/render"
 )
@@ -234,12 +235,52 @@ func (d *doctor) checkManaged(cfg *config.Config) {
 		d.pass("%s in %s current", plural(len(cfg.Profiles), "fragment"), paths.FragmentDirTilde)
 	}
 
+	d.checkCopies(cfg)
+
 	warns := globalIdentityWarnings(cfg, global)
 	for _, w := range warns {
 		d.fail("delete user.name / user.email from your global config; profiles supply them", "%s", w)
 	}
 	if len(warns) == 0 {
 		d.pass("no global identity outside the managed block")
+	}
+}
+
+// checkCopies verifies the registered materialized copies in repositories.
+func (d *doctor) checkCopies(cfg *config.Config) {
+	reg, err := materialize.LoadRegistry()
+	if err != nil {
+		d.fail("", "cannot read %s: %v", paths.Contract(materialize.RegistryPath()), err)
+		return
+	}
+	if len(reg) == 0 {
+		return
+	}
+	repos := registryRepos(reg)
+	if gone := len(reg) - len(repos); gone > 0 {
+		d.warn("run `gitident sync` to forget them", "%s gitident copied a profile into no longer exist", plural(gone, "repository"))
+	}
+	bad := 0
+	for i, r := range inspectAll(cfg, repos) {
+		problem := ""
+		if r.err != nil {
+			problem = r.err.Error()
+		} else {
+			problem = copyProblem(cfg, r.res)
+			if t := r.res.TargetProfile(); problem == "" && r.res.Materialized != "" && r.res.Materialized != t {
+				problem = fmt.Sprintf("holds profile %q but no profile applies any more — run `gitident sync`", r.res.Materialized)
+				if t != "" {
+					problem = fmt.Sprintf("holds profile %q but should get %q — run `gitident sync`", r.res.Materialized, t)
+				}
+			}
+		}
+		if problem != "" {
+			bad++
+			d.fail("", "%s: %s", paths.Contract(repos[i]), problem)
+		}
+	}
+	if bad == 0 {
+		d.pass("%s in .git/config current", plural(len(repos), "materialized copy"))
 	}
 }
 
