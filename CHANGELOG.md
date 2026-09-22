@@ -2,6 +2,8 @@
 
 ## 1.0.0
 
+First stable release. The `profiles.yaml` format (`version: 1`), the command-line interface, the `--json` output of `which`, `check` and `preflight`, and preflight's problem codes and exit statuses are now stable: breaking changes to them will only come with a new major version.
+
 - Build with Go 1.27 (`go 1.27.0` in go.mod; CI and releases follow it).
 
 ## 0.3.0
