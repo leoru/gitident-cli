@@ -34,3 +34,39 @@ jobs:
         run: go test -race ./...
       - name: build
         run: go build -o /dev/null ./cmd/gitident
+
+  # Publishes the coverage badge data (shields.io endpoint JSON) to the
+  # `badges` branch; README.md renders it. No third-party service involved.
+  coverage:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: measure
+        run: |
+          go test -coverpkg=./... -coverprofile=coverage.out ./...
+          pct=$(go tool cover -func=coverage.out | awk '/^total:/ { sub("%", "", $3); print $3 }')
+          color=$(awk -v p="$pct" 'BEGIN { print (p >= 90 ? "brightgreen" : p >= 80 ? "green" : p >= 70 ? "yellowgreen" : p >= 50 ? "yellow" : "red") }')
+          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' "$pct" "$color" > "$RUNNER_TEMP/coverage.json"
+          echo "Coverage: ${pct}%" >> "$GITHUB_STEP_SUMMARY"
+      - name: publish
+        run: |
+          dir="$RUNNER_TEMP/badges"
+          if git fetch --depth=1 origin badges; then
+            git worktree add -B badges "$dir" FETCH_HEAD
+          else
+            git worktree add --orphan -b badges "$dir"
+          fi
+          cp "$RUNNER_TEMP/coverage.json" "$dir/coverage.json"
+          cd "$dir"
+          git add coverage.json
+          if git diff --cached --quiet; then exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Update coverage badge"
+          git push -q origin badges

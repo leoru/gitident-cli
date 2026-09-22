@@ -1,5 +1,11 @@
 # gitident
 
+[![CI](https://github.com/leoru/gitident-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/leoru/gitident-cli/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/leoru/gitident-cli/badges/coverage.json)](https://github.com/leoru/gitident-cli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/leoru/gitident-cli)](https://github.com/leoru/gitident-cli/releases/latest)
+[![Go](https://img.shields.io/github/go-mod/go-version/leoru/gitident-cli)](go.mod)
+[![License: MIT](https://img.shields.io/github/license/leoru/gitident-cli)](LICENSE)
+
 **Commit with the right git identity everywhere, automatically.**
 
 Work email in `~/work`, personal email in `~/code`, a different signing key for
