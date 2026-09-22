@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.0
 
 - Build with Go 1.27 (`go 1.27.0` in go.mod; CI and releases follow it).
 
